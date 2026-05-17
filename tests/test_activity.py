@@ -1,0 +1,200 @@
+"""Tests for the activity analysis module."""
+
+from datetime import datetime, timezone
+
+from gh_stats.activity import (
+    categorize_events,
+    compute_activity_summary,
+    compute_language_stats,
+    compute_repo_stats,
+)
+
+
+class TestCategorizeEvents:
+    """Tests for categorize_events."""
+
+    def test_push_event(self):
+        events = [{
+            "id": "1",
+            "type": "PushEvent",
+            "repo": {"name": "user/repo"},
+            "created_at": "2026-01-15T10:00:00Z",
+            "payload": {"commits": [{"sha": "abc"}, {"sha": "def"}]},
+        }]
+        result = categorize_events(events)
+        assert len(result) == 1
+        assert result[0]["type"] == "push"
+        assert result[0]["repo"] == "user/repo"
+        assert "2 commits" in result[0]["detail"]
+
+    def test_pr_event(self):
+        events = [{
+            "id": "2",
+            "type": "PullRequestEvent",
+            "repo": {"name": "user/repo"},
+            "created_at": "2026-01-15T10:00:00Z",
+            "payload": {
+                "action": "opened",
+                "pull_request": {"title": "Add feature", "number": 42},
+            },
+        }]
+        result = categorize_events(events)
+        assert len(result) == 1
+        assert result[0]["type"] == "pr"
+        assert "#42" in result[0]["detail"]
+        assert "Add feature" in result[0]["detail"]
+
+    def test_issue_event(self):
+        events = [{
+            "id": "3",
+            "type": "IssuesEvent",
+            "repo": {"name": "user/repo"},
+            "created_at": "2026-01-15T10:00:00Z",
+            "payload": {
+                "action": "closed",
+                "issue": {"title": "Bug report", "number": 7},
+            },
+        }]
+        result = categorize_events(events)
+        assert len(result) == 1
+        assert result[0]["type"] == "issue"
+        assert "Closed" in result[0]["detail"]
+
+    def test_star_event(self):
+        events = [{
+            "id": "4",
+            "type": "WatchEvent",
+            "repo": {"name": "other/repo"},
+            "created_at": "2026-01-15T10:00:00Z",
+            "payload": {"action": "started"},
+        }]
+        result = categorize_events(events)
+        assert len(result) == 1
+        assert result[0]["type"] == "star"
+
+    def test_release_event(self):
+        events = [{
+            "id": "5",
+            "type": "ReleaseEvent",
+            "repo": {"name": "user/repo"},
+            "created_at": "2026-01-15T10:00:00Z",
+            "payload": {
+                "release": {"tag_name": "v1.0.0"},
+            },
+        }]
+        result = categorize_events(events)
+        assert len(result) == 1
+        assert result[0]["type"] == "release"
+        assert "v1.0.0" in result[0]["detail"]
+
+    def test_skips_unknown_events(self):
+        events = [{
+            "id": "6",
+            "type": "MemberEvent",
+            "repo": {"name": "user/repo"},
+            "created_at": "2026-01-15T10:00:00Z",
+            "payload": {},
+        }]
+        result = categorize_events(events)
+        assert len(result) == 0
+
+    def test_deduplication(self):
+        events = [
+            {
+                "id": "7",
+                "type": "PushEvent",
+                "repo": {"name": "user/repo"},
+                "created_at": "2026-01-15T10:00:00Z",
+                "payload": {"commits": [{"sha": "abc"}]},
+            },
+            {
+                "id": "7",  # duplicate
+                "type": "PushEvent",
+                "repo": {"name": "user/repo"},
+                "created_at": "2026-01-15T10:00:00Z",
+                "payload": {"commits": [{"sha": "abc"}]},
+            },
+        ]
+        result = categorize_events(events)
+        assert len(result) == 1
+
+    def test_sorted_newest_first(self):
+        events = [
+            {
+                "id": "8",
+                "type": "PushEvent",
+                "repo": {"name": "user/repo"},
+                "created_at": "2026-01-10T10:00:00Z",
+                "payload": {"commits": [{"sha": "abc"}]},
+            },
+            {
+                "id": "9",
+                "type": "PushEvent",
+                "repo": {"name": "user/repo"},
+                "created_at": "2026-01-15T10:00:00Z",
+                "payload": {"commits": [{"sha": "def"}]},
+            },
+        ]
+        result = categorize_events(events)
+        assert result[0]["time"] > result[1]["time"]
+
+
+class TestComputeLanguageStats:
+    """Tests for compute_language_stats."""
+
+    def test_counts_non_fork_languages(self):
+        repos = [
+            {"language": "Python", "fork": False},
+            {"language": "Python", "fork": False},
+            {"language": "Rust", "fork": False},
+            {"language": "Python", "fork": True},  # fork, should be excluded
+            {"language": None, "fork": False},
+        ]
+        result = compute_language_stats(repos)
+        assert result == {"Python": 2, "Rust": 1}
+
+    def test_empty_repos(self):
+        assert compute_language_stats([]) == {}
+
+
+class TestComputeRepoStats:
+    """Tests for compute_repo_stats."""
+
+    def test_excludes_forks(self):
+        repos = [
+            {"full_name": "user/proj", "stargazers_count": 100, "forks_count": 20,
+             "language": "Go", "description": "A project", "fork": False},
+            {"full_name": "user/forked", "stargazers_count": 50, "forks_count": 10,
+             "language": "Python", "description": "A fork", "fork": True},
+        ]
+        result = compute_repo_stats(repos)
+        assert len(result) == 1
+        assert result[0]["name"] == "user/proj"
+        assert result[0]["stars"] == 100
+
+    def test_sorted_by_stars(self):
+        repos = [
+            {"full_name": "user/small", "stargazers_count": 5, "forks_count": 0,
+             "language": "Python", "description": "", "fork": False},
+            {"full_name": "user/big", "stargazers_count": 500, "forks_count": 50,
+             "language": "Rust", "description": "Popular", "fork": False},
+        ]
+        result = compute_repo_stats(repos)
+        assert result[0]["name"] == "user/big"
+        assert result[1]["name"] == "user/small"
+
+
+class TestComputeActivitySummary:
+    """Tests for compute_activity_summary."""
+
+    def test_counts_by_type(self):
+        activities = [
+            {"type": "push", "repo": "a/b", "time": datetime.now(timezone.utc), "detail": ""},
+            {"type": "push", "repo": "a/b", "time": datetime.now(timezone.utc), "detail": ""},
+            {"type": "pr", "repo": "c/d", "time": datetime.now(timezone.utc), "detail": ""},
+        ]
+        result = compute_activity_summary(activities)
+        assert result == {"push": 2, "pr": 1}
+
+    def test_empty_activities(self):
+        assert compute_activity_summary([]) == {}
