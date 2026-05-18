@@ -12,8 +12,18 @@ from rich.text import Text
 # Weekday labels for the heatmap (Sun–Sat)
 _DAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""]
 _MONTH_LABELS = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 ]
 
 # Block characters for contribution intensity
@@ -21,11 +31,11 @@ _HEATMAP_BLOCKS = ["░", "▒", "▓", "█"]
 
 # Color gradient for contributions (green scale)
 _HEATMAP_COLORS = [
-    "",               # 0 — no contributions
-    "color(28)",      # 1 — light green
-    "color(34)",      # 2 — medium green
-    "color(40)",      # 3 — bright green
-    "color(46)",      # 4+ — intense green
+    "",  # 0 — no contributions
+    "color(28)",  # 1 — light green
+    "color(34)",  # 2 — medium green
+    "color(40)",  # 3 — bright green
+    "color(46)",  # 4+ — intense green
 ]
 
 
@@ -63,9 +73,7 @@ def render_profile_card(stats: dict[str, Any], contributions_total: int) -> Pane
     content.append(" 🔥 Contributions (this year): ", style="dim")
     content.append(f"{contributions_total}\n", style="bold green")
 
-    return Panel(
-        content, title="👤 Profile", border_style="bright_blue", padding=(1, 2)
-    )
+    return Panel(content, title="👤 Profile", border_style="bright_blue", padding=(1, 2))
 
 
 def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Panel:
@@ -91,9 +99,7 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
     # Build 7×53 grid (rows=days of week Sun–Sat, cols=weeks)
     rows = 7
     cols = 53
-    grid: list[list[tuple[str, int]]] = [
-        [("", 0) for _ in range(cols)] for _ in range(rows)
-    ]
+    grid: list[list[tuple[str, int]]] = [[("", 0) for _ in range(cols)] for _ in range(rows)]
 
     current = start_date
     week = 0
@@ -150,18 +156,12 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
         text.append(block, style=color)
     text.append(" More", style="dim")
 
-    return Panel(
-        text, title="📊 Contribution Heatmap", border_style="green", padding=(1, 2)
-    )
+    return Panel(text, title="📊 Contribution Heatmap", border_style="green", padding=(1, 2))
 
 
-def render_activity_timeline(
-    activities: list[dict[str, Any]], limit: int = 20
-) -> Panel:
+def render_activity_timeline(activities: list[dict[str, Any]], limit: int = 20) -> Panel:
     """Render the recent activity timeline."""
-    table = Table(
-        show_header=True, header_style="bold cyan", box=None, padding=(0, 1)
-    )
+    table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
     table.add_column("When", style="dim", width=16)
     table.add_column("Type", style="bold", width=8)
     table.add_column("Repository", style="bright_blue", width=30)
@@ -186,11 +186,7 @@ def render_activity_timeline(
         if isinstance(time, datetime):
             delta = now - time
             if delta.days == 0:
-                when = (
-                    f"{delta.seconds // 3600}h ago"
-                    if delta.seconds >= 3600
-                    else "just now"
-                )
+                when = f"{delta.seconds // 3600}h ago" if delta.seconds >= 3600 else "just now"
             elif delta.days == 1:
                 when = "yesterday"
             elif delta.days < 7:
@@ -206,9 +202,7 @@ def render_activity_timeline(
 
         table.add_row(when, type_label, repo, detail)
 
-    return Panel(
-        table, title="🕐 Recent Activity", border_style="yellow", padding=(1, 2)
-    )
+    return Panel(table, title="🕐 Recent Activity", border_style="yellow", padding=(1, 2))
 
 
 def render_language_chart(lang_stats: dict[str, int]) -> Panel:
@@ -226,9 +220,18 @@ def render_language_chart(lang_stats: dict[str, int]) -> Panel:
 
     # Distinct colors for languages
     lang_colors = [
-        "bright_blue", "bright_green", "bright_red", "bright_magenta",
-        "bright_cyan", "bright_yellow", "color(208)", "color(141)",
-        "color(202)", "color(117)", "color(213)", "color(156)",
+        "bright_blue",
+        "bright_green",
+        "bright_red",
+        "bright_magenta",
+        "bright_cyan",
+        "bright_yellow",
+        "color(208)",
+        "color(141)",
+        "color(202)",
+        "color(117)",
+        "color(213)",
+        "color(156)",
     ]
 
     text = Text()
@@ -242,18 +245,12 @@ def render_language_chart(lang_stats: dict[str, int]) -> Panel:
         text.append("█" * bar_width, style=color)
         text.append(f" {pct:.0f}%\n", style="dim")
 
-    return Panel(
-        text, title="🔤 Languages", border_style="magenta", padding=(1, 2)
-    )
+    return Panel(text, title="🔤 Languages", border_style="magenta", padding=(1, 2))
 
 
-def render_repo_table(
-    repo_stats: list[dict[str, Any]], limit: int = 10
-) -> Panel:
+def render_repo_table(repo_stats: list[dict[str, Any]], limit: int = 10) -> Panel:
     """Render a table of top repositories by stars."""
-    table = Table(
-        show_header=True, header_style="bold cyan", box=None, padding=(0, 1)
-    )
+    table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
     table.add_column("Repository", style="bright_blue", min_width=25)
     table.add_column("⭐", style="bright_yellow", justify="right", width=6)
     table.add_column("🍴", style="dim", justify="right", width=6)
@@ -269,9 +266,7 @@ def render_repo_table(
             repo["description"],
         )
 
-    return Panel(
-        table, title="🏆 Top Repositories", border_style="bright_cyan", padding=(1, 2)
-    )
+    return Panel(table, title="🏆 Top Repositories", border_style="bright_cyan", padding=(1, 2))
 
 
 def render_summary_bar(summary: dict[str, int]) -> Panel:
@@ -303,6 +298,4 @@ def render_summary_bar(summary: dict[str, int]) -> Panel:
         parts.append(f"{label}: [bold]{count}[/bold]")
 
     content = "  ".join(parts)
-    return Panel(
-        content, title="📈 Activity Summary", border_style="white", padding=(1, 2)
-    )
+    return Panel(content, title="📈 Activity Summary", border_style="white", padding=(1, 2))

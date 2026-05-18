@@ -6,6 +6,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from . import __version__
 from .activity import (
     categorize_events,
     compute_activity_summary,
@@ -35,30 +36,50 @@ console = Console()
 
 @click.command()
 @click.option(
-    "-u", "--user", "username", default=None,
+    "-u",
+    "--user",
+    "username",
+    default=None,
     help="GitHub username (defaults to authenticated user)",
 )
 @click.option(
-    "-y", "--year", "year", default=None, type=int,
+    "-y",
+    "--year",
+    "year",
+    default=None,
+    type=int,
     help="Year for contribution heatmap (default: current year)",
 )
 @click.option(
-    "-l", "--limit", "limit", default=20, type=int,
+    "-l",
+    "--limit",
+    "limit",
+    default=20,
+    type=int,
     help="Number of recent activities to show (default: 20)",
 )
 @click.option(
-    "--repos", "show_repos", is_flag=True, default=False,
+    "--repos",
+    "show_repos",
+    is_flag=True,
+    default=False,
     help="Show top repositories table",
 )
 @click.option(
-    "--no-heatmap", "no_heatmap", is_flag=True, default=False,
+    "--no-heatmap",
+    "no_heatmap",
+    is_flag=True,
+    default=False,
     help="Skip contribution heatmap",
 )
 @click.option(
-    "--no-activity", "no_activity", is_flag=True, default=False,
+    "--no-activity",
+    "no_activity",
+    is_flag=True,
+    default=False,
     help="Skip activity timeline",
 )
-@click.version_option(version="0.1.0", prog_name="gh-stats")
+@click.version_option(version=__version__, prog_name="gh-stats")
 def main(
     username: str | None,
     year: int | None,
@@ -94,12 +115,12 @@ def main(
                 if not username:
                     console.print("[red]Could not determine GitHub username.[/red]")
                     raise SystemExit(1)
+            else:
+                user_data = None
 
-            # Fetch profile stats
-            progress.update(
-                task, description=f"Fetching profile for [bold]{username}[/bold]..."
-            )
-            stats = get_user_stats(token, username)
+            # Fetch profile stats (reuse authenticated_user to avoid duplicate API call)
+            progress.update(task, description=f"Fetching profile for [bold]{username}[/bold]...")
+            stats = get_user_stats(token, username, authenticated_user=user_data)
 
             # Fetch contributions
             progress.update(task, description="Loading contribution data...")

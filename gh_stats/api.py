@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import atexit
 import json
+import logging
 import os
 import subprocess
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("gh_stats")
+
+_client: httpx.Client | None = None
 
 
 class AuthError(Exception):
@@ -42,9 +48,7 @@ def get_token() -> str:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    raise AuthError(
-        "No GitHub token found. Set GH_TOKEN or install and authenticate `gh` CLI."
-    )
+    raise AuthError("No GitHub token found. Set GH_TOKEN or install and authenticate `gh` CLI.")
 
 
 def get_authenticated_user(token: str) -> dict[str, Any]:
@@ -144,15 +148,27 @@ def get_contributions(token: str, username: str, year: int | None = None) -> dic
                 if day["contributionCount"] > 0:
                     contributions[day["date"]] = day["contributionCount"]
         return contributions
-    except (KeyError, TypeError):
+    except (KeyError, TypeError) as exc:
+        logger.warning("Failed to parse contribution calendar: %s", exc)
         return {}
 
 
-def get_user_stats(token: str, username: str) -> dict[str, Any]:
-    """Fetch aggregate stats for the user profile card."""
-    user = get_authenticated_user(token) if username == _get_current_login(token) else _request(
-        token, "GET", f"https://api.github.com/users/{username}"
-    )
+def get_user_stats(
+    token: str, username: str, *, authenticated_user: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Fetch aggregate stats for the user profile card.
+
+    If ``authenticated_user`` is provided (from a prior ``get_authenticated_user``
+    call), it will be reused when *username* matches the current login, avoiding a
+    duplicate API round-trip.
+    """
+    current_login = (authenticated_user or get_authenticated_user(token)).get("login", "")
+    if username == current_login and authenticated_user is not None:
+        user = authenticated_user
+    elif username == current_login:
+        user = authenticated_user or get_authenticated_user(token)
+    else:
+        user = _request(token, "GET", f"https://api.github.com/users/{username}")
     return {
         "login": user.get("login", username),
         "name": user.get("name") or user.get("login", username),
@@ -166,17 +182,29 @@ def get_user_stats(token: str, username: str) -> dict[str, Any]:
     }
 
 
-def _get_current_login(token: str) -> str:
-    """Get the login of the authenticated user from the token."""
-    user = get_authenticated_user(token)
-    return user.get("login", "")
-
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_client = httpx.Client(timeout=30.0)
+
+def _get_client() -> httpx.Client:
+    """Lazy-initialised HTTP client (created once, closed at process exit)."""
+    global _client  # noqa: PLW0603
+    if _client is None:
+        _client = httpx.Client(timeout=30.0)
+        atexit.register(_close_client)
+    return _client
+
+
+def _close_client() -> None:
+    """Shut down the shared HTTP client gracefully."""
+    global _client  # noqa: PLW0603
+    if _client is not None:
+        try:
+            _client.close()
+        except Exception:  # noqa: BLE001
+            pass
+    _client = None
 
 
 def _request(
@@ -191,7 +219,14 @@ def _request(
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    resp = _client.request(method, url, headers=headers, params=params)
+    try:
+        resp = _get_client().request(method, url, headers=headers, params=params)
+    except httpx.TimeoutException as exc:
+        raise ApiError(f"Request to {url} timed out: {exc}") from exc
+    except httpx.ConnectError as exc:
+        raise ApiError(f"Cannot connect to {url}: {exc}") from exc
+    except httpx.NetworkError as exc:
+        raise ApiError(f"Network error contacting {url}: {exc}") from exc
     if resp.status_code == 401:
         raise AuthError("GitHub token is invalid or expired.")
     if resp.status_code == 403:
@@ -209,11 +244,18 @@ def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None)
     payload: dict[str, Any] = {"query": query}
     if variables:
         payload["variables"] = variables
-    resp = _client.post(
-        "https://api.github.com/graphql",
-        headers=headers,
-        json=payload,
-    )
+    try:
+        resp = _get_client().post(
+            "https://api.github.com/graphql",
+            headers=headers,
+            json=payload,
+        )
+    except httpx.TimeoutException as exc:
+        raise ApiError(f"GraphQL request timed out: {exc}") from exc
+    except httpx.ConnectError as exc:
+        raise ApiError(f"Cannot connect to GraphQL endpoint: {exc}") from exc
+    except httpx.NetworkError as exc:
+        raise ApiError(f"Network error on GraphQL request: {exc}") from exc
     if resp.status_code == 401:
         raise AuthError("GitHub token is invalid or expired.")
     if resp.status_code >= 400:

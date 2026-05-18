@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger("gh_stats")
 
 
 def categorize_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -69,13 +72,15 @@ def compute_repo_stats(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for repo in repos:
         if repo.get("fork", False):
             continue
-        result.append({
-            "name": repo.get("full_name", repo.get("name", "")),
-            "stars": repo.get("stargazers_count", 0),
-            "forks": repo.get("forks_count", 0),
-            "language": repo.get("language") or "—",
-            "description": (repo.get("description") or "")[:80],
-        })
+        result.append(
+            {
+                "name": repo.get("full_name", repo.get("name", "")),
+                "stars": repo.get("stargazers_count", 0),
+                "forks": repo.get("forks_count", 0),
+                "language": repo.get("language") or "—",
+                "description": (repo.get("description") or "")[:80],
+            }
+        )
     result.sort(key=lambda r: r["stars"], reverse=True)
     return result
 
@@ -188,4 +193,5 @@ def _parse_dt(dt_str: str) -> datetime:
     try:
         return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
+        logger.warning("Failed to parse datetime %r, using current UTC time", dt_str)
         return datetime.now(timezone.utc)
