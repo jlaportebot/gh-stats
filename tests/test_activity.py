@@ -1,7 +1,11 @@
+# Copyright 2025 jlaportebot. All rights reserved.
+# Use of this source code is governed by a MIT-style license that can be
+# found in the LICENSE file.
+
 """Tests for the activity analysis module."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from gh_stats.activity import (
     _parse_dt,
@@ -227,9 +231,9 @@ class TestComputeActivitySummary:
 
     def test_counts_by_type(self):
         activities = [
-            {"type": "push", "repo": "a/b", "time": datetime.now(timezone.utc), "detail": ""},
-            {"type": "push", "repo": "a/b", "time": datetime.now(timezone.utc), "detail": ""},
-            {"type": "pr", "repo": "c/d", "time": datetime.now(timezone.utc), "detail": ""},
+            {"type": "push", "repo": "a/b", "time": datetime.now(UTC), "detail": ""},
+            {"type": "push", "repo": "a/b", "time": datetime.now(UTC), "detail": ""},
+            {"type": "pr", "repo": "c/d", "time": datetime.now(UTC), "detail": ""},
         ]
         result = compute_activity_summary(activities)
         assert result == {"push": 2, "pr": 1}

@@ -1,8 +1,12 @@
+# Copyright 2025 jlaportebot. All rights reserved.
+# Use of this source code is governed by a MIT-style license that can be
+# found in the LICENSE file.
+
 """Rich terminal UI — renders the dashboard components."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from rich.panel import Panel
@@ -38,9 +42,18 @@ _HEATMAP_COLORS = [
     "color(46)",  # 4+ — intense green
 ]
 
+# Constants for time calculations
+SECONDS_PER_HOUR = 3600
+DAYS_PER_WEEK = 7
+WEEKS_PER_YEAR = 52
+
 
 def _intensity_level(count: int) -> int:
-    """Map a contribution count to a 0–4 intensity level."""
+    """Map a contribution count to a 0–4 intensity level.
+
+    Returns:
+        Intensity level (0-4).
+    """
     if count == 0:
         return 0
     if count <= 2:
@@ -53,7 +66,11 @@ def _intensity_level(count: int) -> int:
 
 
 def render_profile_card(stats: dict[str, Any], contributions_total: int) -> Panel:
-    """Render the user profile card."""
+    """Render the user profile card.
+
+    Returns:
+        Rich Panel with profile information.
+    """
     name = stats.get("name", stats.get("login", ""))
     login = stats.get("login", "")
     bio = stats.get("bio", "")
@@ -81,8 +98,11 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
 
     Builds a grid of Unicode block characters with green color scaling,
     mirroring the classic GitHub contribution graph.
+
+    Returns:
+        Rich Panel with the heatmap.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if year is None:
         year = now.year
 
@@ -92,7 +112,7 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
     else:
         end_date = datetime(year, 12, 31).date()
 
-    start_date = end_date - timedelta(weeks=52)
+    start_date = end_date - timedelta(weeks=WEEKS_PER_YEAR)
     # Align to Sunday
     start_date = start_date - timedelta(days=(start_date.weekday() + 1) % 7)
 
@@ -152,7 +172,7 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
 
     # Legend
     text.append("\n  Less ", style="dim")
-    for block, color in zip(_HEATMAP_BLOCKS, _HEATMAP_COLORS[1:]):
+    for block, color in zip(_HEATMAP_BLOCKS, _HEATMAP_COLORS[1:], strict=True):
         text.append(block, style=color)
     text.append(" More", style="dim")
 
@@ -160,14 +180,18 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
 
 
 def render_activity_timeline(activities: list[dict[str, Any]], limit: int = 20) -> Panel:
-    """Render the recent activity timeline."""
+    """Render the recent activity timeline.
+
+    Returns:
+        Rich Panel with activity table.
+    """
     table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
     table.add_column("When", style="dim", width=16)
     table.add_column("Type", style="bold", width=8)
     table.add_column("Repository", style="bright_blue", width=30)
     table.add_column("Detail", style="white", min_width=20)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     type_icons = {
         "push": "⬆ Push",
         "pr": "🔀 PR",
@@ -176,8 +200,8 @@ def render_activity_timeline(activities: list[dict[str, Any]], limit: int = 20) 
         "release": "🏷 Release",
         "star": "⭐ Star",
         "fork": "🍴 Fork",
-        "create": "➕ Create",
-        "delete": "➖ Delete",
+        "create": "+ Create",
+        "delete": "- Delete",
         "comment": "💬 Comment",
     }
 
@@ -186,10 +210,14 @@ def render_activity_timeline(activities: list[dict[str, Any]], limit: int = 20) 
         if isinstance(time, datetime):
             delta = now - time
             if delta.days == 0:
-                when = f"{delta.seconds // 3600}h ago" if delta.seconds >= 3600 else "just now"
+                when = (
+                    f"{delta.seconds // SECONDS_PER_HOUR}h ago"
+                    if delta.seconds >= SECONDS_PER_HOUR
+                    else "just now"
+                )
             elif delta.days == 1:
                 when = "yesterday"
-            elif delta.days < 7:
+            elif delta.days < DAYS_PER_WEEK:
                 when = f"{delta.days}d ago"
             else:
                 when = time.strftime("%b %d")
@@ -206,7 +234,11 @@ def render_activity_timeline(activities: list[dict[str, Any]], limit: int = 20) 
 
 
 def render_language_chart(lang_stats: dict[str, int]) -> Panel:
-    """Render language distribution as a horizontal bar chart."""
+    """Render language distribution as a horizontal bar chart.
+
+    Returns:
+        Rich Panel with language chart.
+    """
     if not lang_stats:
         return Panel(
             Text(" No language data available", style="dim"),
@@ -249,7 +281,11 @@ def render_language_chart(lang_stats: dict[str, int]) -> Panel:
 
 
 def render_repo_table(repo_stats: list[dict[str, Any]], limit: int = 10) -> Panel:
-    """Render a table of top repositories by stars."""
+    """Render a table of top repositories by stars.
+
+    Returns:
+        Rich Panel with repository table.
+    """
     table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
     table.add_column("Repository", style="bright_blue", min_width=25)
     table.add_column("⭐", style="bright_yellow", justify="right", width=6)
@@ -270,7 +306,11 @@ def render_repo_table(repo_stats: list[dict[str, Any]], limit: int = 10) -> Pane
 
 
 def render_summary_bar(summary: dict[str, int]) -> Panel:
-    """Render a compact summary bar of activity by type."""
+    """Render a compact summary bar of activity by type.
+
+    Returns:
+        Rich Panel with summary bar.
+    """
     if not summary:
         return Panel(
             Text(" No activity data", style="dim"),
@@ -287,8 +327,8 @@ def render_summary_bar(summary: dict[str, int]) -> Panel:
         "release": "🏷 Releases",
         "star": "⭐ Stars",
         "fork": "🍴 Forks",
-        "create": "➕ Creates",
-        "delete": "➖ Deletes",
+        "create": "+ Creates",
+        "delete": "- Deletes",
         "comment": "💬 Comments",
     }
 

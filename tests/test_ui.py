@@ -1,3 +1,7 @@
+# Copyright 2025 jlaportebot. All rights reserved.
+# Use of this source code is governed by a MIT-style license that can be
+# found in the LICENSE file.
+
 """Tests for the UI rendering module."""
 
 from rich.console import Console
@@ -12,7 +16,11 @@ from gh_stats.ui import (
 
 
 def _render(panel) -> str:
-    """Helper to render a Rich panel to a string."""
+    """Helper to render a Rich panel to a string.
+
+    Returns:
+        Rendered panel as string.
+    """
     c = Console(width=120, force_terminal=True)
     c.begin_capture()
     c.print(panel)
