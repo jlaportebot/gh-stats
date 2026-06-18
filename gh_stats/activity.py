@@ -18,13 +18,12 @@ logger = logging.getLogger("gh_stats")
 def categorize_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Turn raw GitHub events into a clean list of categorized activities.
 
-    Returns list of dicts:
-        {
-            "type": str,        # push, pr, issue, review, release, etc.
-            "repo": str,        # owner/repo
-            "time": datetime,
-            "detail": str,      # human-readable summary
-        }
+    Returns:
+        List of activity dicts with keys:
+            "type": str  # push, pr, issue, review, release, etc.
+            "repo": str  # owner/repo
+            "time": datetime
+            "detail": str  # human-readable summary
     """
     activities: list[dict[str, Any]] = []
     seen = set()
@@ -215,10 +214,7 @@ def _parse_issue_comment_event(
     issue = payload.get("payload", {}).get("issue", {})
     title = issue.get("title", "")
     number = issue.get("number", "")
-    if number:
-        detail = f"Commented on issue #{number}: {title}"
-    else:
-        detail = f"Commented on issue: {title}"
+    detail = f"Commented on issue #{number}: {title}" if number else f"Commented on issue: {title}"
     return {"type": "comment", "repo": repo, "time": time, "detail": detail}
 
 
@@ -235,7 +231,7 @@ def _parse_dt(dt_str: str) -> datetime:
         Parsed datetime in UTC.
     """
     try:
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        return datetime.fromisoformat(dt_str)
     except (ValueError, AttributeError):
         logger.warning("Failed to parse datetime %r, using current UTC time", dt_str)
         return datetime.now(UTC)

@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import logging
 import os
-import subprocess
+import shutil
+import subprocess  # noqa: S404
 from datetime import UTC, datetime
 from typing import Any
 
@@ -47,8 +49,11 @@ def get_token() -> str:
         return env_token
 
     try:
+        gh_path = shutil.which("gh")
+        if gh_path is None:
+            raise FileNotFoundError("gh CLI not found in PATH")
         result = subprocess.run(
-            ["gh", "auth", "token"],
+            [gh_path, "auth", "token"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -170,10 +175,11 @@ def get_contributions(token: str, username: str, year: int | None = None) -> dic
             for day in week["contributionDays"]:
                 if day["contributionCount"] > 0:
                     contributions[day["date"]] = day["contributionCount"]
-        return contributions
     except (KeyError, TypeError) as exc:
         logger.warning("Failed to parse contribution calendar: %s", exc)
         return {}
+    else:
+        return contributions
 
 
 def get_user_stats(
@@ -230,10 +236,8 @@ def _close_client() -> None:
     """Shut down the shared HTTP client gracefully."""
     global _client  # noqa: PLW0603
     if _client is not None:
-        try:
+        with contextlib.suppress(Exception):
             _client.close()
-        except Exception:  # noqa: BLE001
-            pass
     _client = None
 
 
