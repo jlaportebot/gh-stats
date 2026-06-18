@@ -63,7 +63,7 @@ ignore = [
     "PLR0913",  # too many arguments (common in CLI)
     "TRY003",   # avoid specifying long messages outside exception
 ]
-per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001"] }
+per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001", "S105", "PLC2701"] }
 
 [tool.ruff.format]
 quote-style = "double"

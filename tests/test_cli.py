@@ -43,10 +43,12 @@ class TestCLINoToken:
 
     def test_no_token_exits_with_error(self):
         runner = CliRunner()
-        with patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}, clear=False):
-            with patch("subprocess.run", side_effect=FileNotFoundError):
-                result = runner.invoke(main, ["--user", "testuser"])
-                assert result.exit_code != 0
+        with (
+            patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}, clear=False),
+            patch("subprocess.run", side_effect=FileNotFoundError),
+        ):
+            result = runner.invoke(main, ["--user", "testuser"])
+            assert result.exit_code != 0
 
 
 class TestCLIWithToken:
@@ -85,17 +87,16 @@ class TestCLIWithToken:
             }
         ]
 
-        with patch("gh_stats.cli.get_token", return_value="fake_token"):
-            with patch("gh_stats.cli.get_user_stats", return_value=mock_user):
-                with patch("gh_stats.cli.get_user_events", return_value=mock_events):
-                    with patch("gh_stats.cli.get_user_repos", return_value=mock_repos):
-                        with patch(
-                            "gh_stats.cli.get_contributions",
-                            return_value={"2026-01-15": 5},
-                        ):
-                            runner = CliRunner()
-                            result = runner.invoke(main, ["--user", "testuser"])
-                            assert result.exit_code == 0
+        with (
+            patch("gh_stats.cli.get_token", return_value="fake_token"),
+            patch("gh_stats.cli.get_user_stats", return_value=mock_user),
+            patch("gh_stats.cli.get_user_events", return_value=mock_events),
+            patch("gh_stats.cli.get_user_repos", return_value=mock_repos),
+            patch("gh_stats.cli.get_contributions", return_value={"2026-01-15": 5}),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(main, ["--user", "testuser"])
+            assert result.exit_code == 0
 
     def test_successful_run_without_user(self):
         """Happy-path run without --user (uses authenticated user)."""
@@ -111,15 +112,17 @@ class TestCLIWithToken:
             "created_at": "2020-01-01T00:00:00Z",
         }
 
-        with patch("gh_stats.cli.get_token", return_value="fake_token"):
-            with patch("gh_stats.api.get_authenticated_user", return_value=mock_user):
-                with patch("gh_stats.cli.get_user_stats", return_value=mock_user):
-                    with patch("gh_stats.cli.get_user_events", return_value=[]):
-                        with patch("gh_stats.cli.get_user_repos", return_value=[]):
-                            with patch("gh_stats.cli.get_contributions", return_value={}):
-                                runner = CliRunner()
-                                result = runner.invoke(main, [])
-                                assert result.exit_code == 0
+        with (
+            patch("gh_stats.cli.get_token", return_value="fake_token"),
+            patch("gh_stats.api.get_authenticated_user", return_value=mock_user),
+            patch("gh_stats.cli.get_user_stats", return_value=mock_user),
+            patch("gh_stats.cli.get_user_events", return_value=[]),
+            patch("gh_stats.cli.get_user_repos", return_value=[]),
+            patch("gh_stats.cli.get_contributions", return_value={}),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(main, [])
+            assert result.exit_code == 0
 
     def test_authenticated_user_reuse(self):
         """When no --user given, get_user_stats should receive authenticated_user kwarg."""
@@ -135,19 +138,21 @@ class TestCLIWithToken:
             "created_at": "",
         }
 
-        with patch("gh_stats.cli.get_token", return_value="fake_token"):
-            with patch("gh_stats.api.get_authenticated_user", return_value=mock_user):
-                with patch("gh_stats.cli.get_user_stats", return_value=mock_user) as mock_stats:
-                    with patch("gh_stats.cli.get_user_events", return_value=[]):
-                        with patch("gh_stats.cli.get_user_repos", return_value=[]):
-                            with patch("gh_stats.cli.get_contributions", return_value={}):
-                                runner = CliRunner()
-                                result = runner.invoke(main, [])
-                                assert result.exit_code == 0
-                                # Verify authenticated_user was passed to avoid double API call
-                                assert mock_stats.call_count == 1
-                                call_kwargs = mock_stats.call_args.kwargs
-                                assert call_kwargs.get("authenticated_user") is not None
+        with (
+            patch("gh_stats.cli.get_token", return_value="fake_token"),
+            patch("gh_stats.api.get_authenticated_user", return_value=mock_user),
+            patch("gh_stats.cli.get_user_stats", return_value=mock_user) as mock_stats,
+            patch("gh_stats.cli.get_user_events", return_value=[]),
+            patch("gh_stats.cli.get_user_repos", return_value=[]),
+            patch("gh_stats.cli.get_contributions", return_value={}),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(main, [])
+            assert result.exit_code == 0
+            # Verify authenticated_user was passed to avoid double API call
+            assert mock_stats.call_count == 1
+            call_kwargs = mock_stats.call_args.kwargs
+            assert call_kwargs.get("authenticated_user") is not None
 
     def test_auth_error_exits(self):
         """AuthError should exit non-zero."""
@@ -158,8 +163,10 @@ class TestCLIWithToken:
 
     def test_api_error_exits(self):
         """ApiError should exit non-zero."""
-        with patch("gh_stats.cli.get_token", return_value="fake_token"):
-            with patch("gh_stats.cli.get_user_stats", side_effect=ApiError("API down")):
-                runner = CliRunner()
-                result = runner.invoke(main, ["--user", "testuser"])
-                assert result.exit_code != 0
+        with (
+            patch("gh_stats.cli.get_token", return_value="fake_token"),
+            patch("gh_stats.cli.get_user_stats", side_effect=ApiError("API down")),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(main, ["--user", "testuser"])
+            assert result.exit_code != 0

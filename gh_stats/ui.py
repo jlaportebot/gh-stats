@@ -172,7 +172,7 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
 
     # Legend
     text.append("\n  Less ", style="dim")
-    for block, color in zip(_HEATMAP_BLOCKS, _HEATMAP_COLORS[1:]):
+    for block, color in zip(_HEATMAP_BLOCKS, _HEATMAP_COLORS[1:], strict=True):
         text.append(block, style=color)
     text.append(" More", style="dim")
 
