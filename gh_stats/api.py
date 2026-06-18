@@ -1,3 +1,7 @@
+# Copyright 2025 jlaportebot. All rights reserved.
+# Use of this source code is governed by a MIT-style license that can be
+# found in the LICENSE file.
+
 """GitHub API client — authenticates via `gh` CLI token and fetches activity data."""
 
 from __future__ import annotations
@@ -7,7 +11,7 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -31,6 +35,12 @@ def get_token() -> str:
     Priority:
     1. GH_TOKEN / GITHUB_TOKEN env var
     2. `gh auth token` output
+
+    Returns:
+        GitHub API token string.
+
+    Raises:
+        AuthError: If no token can be found.
     """
     env_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if env_token:
@@ -42,25 +52,34 @@ def get_token() -> str:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    raise AuthError("No GitHub token found. Set GH_TOKEN or install and authenticate `gh` CLI.")
+    msg = "No GitHub token found. Set GH_TOKEN or install and authenticate `gh` CLI."
+    raise AuthError(msg)
 
 
 def get_authenticated_user(token: str) -> dict[str, Any]:
-    """Fetch the authenticated user's profile."""
-    resp = _request(token, "GET", "https://api.github.com/user")
-    return resp
+    """Fetch the authenticated user's profile.
+
+    Returns:
+        User profile dict from GitHub API.
+    """
+    return _request(token, "GET", "https://api.github.com/user")
 
 
 def get_user_events(
     token: str, username: str, *, per_page: int = 100, pages: int = 3
 ) -> list[dict[str, Any]]:
-    """Fetch recent public events for a user (paginated)."""
+    """Fetch recent public events for a user (paginated).
+
+    Returns:
+        List of event dicts from GitHub API.
+    """
     events: list[dict[str, Any]] = []
     for page in range(1, pages + 1):
         resp = _request(
@@ -78,7 +97,11 @@ def get_user_events(
 def get_user_repos(
     token: str, username: str, *, per_page: int = 100, pages: int = 3
 ) -> list[dict[str, Any]]:
-    """Fetch repos owned by the user, sorted by updated date."""
+    """Fetch repos owned by the user, sorted by updated date.
+
+    Returns:
+        List of repo dicts from GitHub API.
+    """
     repos: list[dict[str, Any]] = []
     for page in range(1, pages + 1):
         resp = _request(
@@ -103,17 +126,17 @@ def get_contributions(token: str, username: str, year: int | None = None) -> dic
 
     Uses the GitHub GraphQL API to get the contribution calendar.
     Returns {YYYY-MM-DD: count} for each day with activity.
+
+    Returns:
+        Dict mapping date strings to contribution counts.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if year is None:
         year = now.year
 
     # Query from Jan 1 of the year to today (or Dec 31 if past year)
     from_date = f"{year}-01-01T00:00:00Z"
-    if year == now.year:
-        to_date = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        to_date = f"{year}-12-31T23:59:59Z"
+    to_date = now.strftime("%Y-%m-%dT%H:%M:%SZ") if year == now.year else f"{year}-12-31T23:59:59Z"
 
     query = """
     query($login: String!, $from: DateTime!, $to: DateTime!) {
@@ -161,6 +184,9 @@ def get_user_stats(
     If ``authenticated_user`` is provided (from a prior ``get_authenticated_user``
     call), it will be reused when *username* matches the current login, avoiding a
     duplicate API round-trip.
+
+    Returns:
+        Dict with user stats for the profile card.
     """
     current_login = (authenticated_user or get_authenticated_user(token)).get("login", "")
     if username == current_login and authenticated_user is not None:
@@ -188,7 +214,11 @@ def get_user_stats(
 
 
 def _get_client() -> httpx.Client:
-    """Lazy-initialised HTTP client (created once, closed at process exit)."""
+    """Lazy-initialised HTTP client (created once, closed at process exit).
+
+    Returns:
+        Shared httpx.Client instance.
+    """
     global _client  # noqa: PLW0603
     if _client is None:
         _client = httpx.Client(timeout=30.0)
@@ -214,6 +244,21 @@ def _request(
     *,
     params: dict[str, Any] | None = None,
 ) -> Any:
+    """Make an authenticated HTTP request to GitHub REST API.
+
+    Args:
+        token: GitHub API token.
+        method: HTTP method (GET, POST, etc.).
+        url: Request URL.
+        params: Optional query parameters.
+
+    Returns:
+        Parsed JSON response.
+
+    Raises:
+        AuthError: If token is invalid (401).
+        ApiError: If request fails or returns error status.
+    """
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -227,16 +272,31 @@ def _request(
         raise ApiError(f"Cannot connect to {url}: {exc}") from exc
     except httpx.NetworkError as exc:
         raise ApiError(f"Network error contacting {url}: {exc}") from exc
+
     if resp.status_code == 401:
         raise AuthError("GitHub token is invalid or expired.")
     if resp.status_code == 403:
-        raise ApiError(f"Rate limited or forbidden: {resp.status_code}")
+        raise ApiError("Rate limited or forbidden.")
     if resp.status_code >= 400:
         raise ApiError(f"API error {resp.status_code}: {resp.text[:200]}")
     return resp.json()
 
 
 def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None) -> Any:
+    """Execute a GraphQL query against GitHub API.
+
+    Args:
+        token: GitHub API token.
+        query: GraphQL query string.
+        variables: Optional variables for the query.
+
+    Returns:
+        Parsed JSON response data.
+
+    Raises:
+        AuthError: If token is invalid (401).
+        ApiError: If request fails or GraphQL returns errors.
+    """
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -256,6 +316,7 @@ def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None)
         raise ApiError(f"Cannot connect to GraphQL endpoint: {exc}") from exc
     except httpx.NetworkError as exc:
         raise ApiError(f"Network error on GraphQL request: {exc}") from exc
+
     if resp.status_code == 401:
         raise AuthError("GitHub token is invalid or expired.")
     if resp.status_code >= 400:

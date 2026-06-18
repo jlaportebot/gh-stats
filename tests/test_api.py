@@ -1,3 +1,7 @@
+# Copyright 2025 jlaportebot. All rights reserved.
+# Use of this source code is governed by a MIT-style license that can be
+# found in the LICENSE file.
+
 """Tests for the API client module."""
 
 import os
@@ -6,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+import gh_stats.api as api_mod
 from gh_stats.api import ApiError, AuthError, _close_client, get_token, get_user_stats
 
 
@@ -13,14 +18,14 @@ class TestGetToken:
     """Tests for get_token."""
 
     def test_gh_token_env_var(self):
-        with patch.dict(os.environ, {"GH_TOKEN": "test_token_123"}, clear=False):
-            with patch.dict(os.environ, {"GITHUB_TOKEN": ""}, clear=False):
-                token = get_token()
-                assert token == "test_token_123"
+        with patch.dict(
+            os.environ, {"GH_TOKEN": "test_token_123", "GITHUB_TOKEN": ""}, clear=False
+        ):
+            token = get_token()
+            assert token == "test_token_123"
 
     def test_github_token_env_var(self):
-        env = {"GH_TOKEN": "", "GITHUB_TOKEN": "gh_test_token"}
-        with patch.dict(os.environ, env, clear=False):
+        with patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": "gh_test_token"}, clear=False):
             token = get_token()
             assert token == "gh_test_token"
 
@@ -100,18 +105,14 @@ class TestNetworkErrors:
         mock_client.request.side_effect = httpx.TimeoutException("timeout")
         with patch("gh_stats.api._get_client", return_value=mock_client):
             with pytest.raises(ApiError, match="timed out"):
-                from gh_stats.api import _request
-
-                _request("tok", "GET", "https://api.github.com/test")
+                api_mod._request("tok", "GET", "https://api.github.com/test")
 
     def test_request_connect_error_raises_api_error(self):
         mock_client = MagicMock()
         mock_client.request.side_effect = httpx.ConnectError("connection refused")
         with patch("gh_stats.api._get_client", return_value=mock_client):
             with pytest.raises(ApiError, match="Cannot connect"):
-                from gh_stats.api import _request
-
-                _request("tok", "GET", "https://api.github.com/test")
+                api_mod._request("tok", "GET", "https://api.github.com/test")
 
     def test_request_401_raises_auth_error(self):
         mock_resp = MagicMock()
@@ -120,9 +121,7 @@ class TestNetworkErrors:
         mock_client.request.return_value = mock_resp
         with patch("gh_stats.api._get_client", return_value=mock_client):
             with pytest.raises(AuthError, match="invalid or expired"):
-                from gh_stats.api import _request
-
-                _request("tok", "GET", "https://api.github.com/test")
+                api_mod._request("tok", "GET", "https://api.github.com/test")
 
     def test_request_403_raises_api_error(self):
         mock_resp = MagicMock()
@@ -131,26 +130,20 @@ class TestNetworkErrors:
         mock_client.request.return_value = mock_resp
         with patch("gh_stats.api._get_client", return_value=mock_client):
             with pytest.raises(ApiError, match="Rate limited"):
-                from gh_stats.api import _request
-
-                _request("tok", "GET", "https://api.github.com/test")
+                api_mod._request("tok", "GET", "https://api.github.com/test")
 
     def test_graphql_timeout_raises_api_error(self):
         mock_client = MagicMock()
         mock_client.post.side_effect = httpx.TimeoutException("timeout")
         with patch("gh_stats.api._get_client", return_value=mock_client):
             with pytest.raises(ApiError, match="GraphQL request timed out"):
-                from gh_stats.api import _graphql
-
-                _graphql("tok", "query { }")
+                api_mod._graphql("tok", "query { }")
 
 
 class TestCloseClient:
     """Tests for _close_client."""
 
     def test_close_client_resets_global(self):
-        import gh_stats.api as api_mod
-
         mock = MagicMock()
         api_mod._client = mock
         _close_client()
@@ -158,8 +151,6 @@ class TestCloseClient:
         assert api_mod._client is None
 
     def test_close_client_noop_when_none(self):
-        import gh_stats.api as api_mod
-
         api_mod._client = None
         _close_client()  # should not raise
         assert api_mod._client is None
