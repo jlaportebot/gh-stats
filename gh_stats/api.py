@@ -22,6 +22,14 @@ logger = logging.getLogger("gh_stats")
 
 _client: httpx.Client | None = None
 
+# Type alias for JSON-serializable data
+JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
+
+# HTTP status code constants
+HTTP_UNAUTHORIZED = 401
+HTTP_FORBIDDEN = 403
+HTTP_BAD_REQUEST = 400
+
 
 class AuthError(Exception):
     """Raised when GitHub authentication fails."""
@@ -49,23 +57,39 @@ def get_token() -> str:
         return env_token
 
     try:
-        gh_path = shutil.which("gh")
-        if gh_path is None:
-            raise FileNotFoundError("gh CLI not found in PATH")
-        result = subprocess.run(
-            [gh_path, "auth", "token"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+        gh_path = _get_gh_path()
+    except FileNotFoundError:
+        msg = "No GitHub token found. Set GH_TOKEN or install and authenticate `gh` CLI."
+        raise AuthError(msg) from None
+
+    result = subprocess.run(  # noqa: S603
+        [gh_path, "auth", "token"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
 
     msg = "No GitHub token found. Set GH_TOKEN or install and authenticate `gh` CLI."
     raise AuthError(msg)
+
+
+def _get_gh_path() -> str:
+    """Get the full path to the gh CLI executable.
+
+    Returns:
+        Full path to gh executable.
+
+    Raises:
+        FileNotFoundError: If gh CLI is not found in PATH.
+    """
+    gh_path = shutil.which("gh")
+    if gh_path is None:
+        msg = "gh CLI not found in PATH"
+        raise FileNotFoundError(msg)
+    return gh_path
 
 
 def get_authenticated_user(token: str) -> dict[str, Any]:
@@ -247,7 +271,7 @@ def _request(
     url: str,
     *,
     params: dict[str, Any] | None = None,
-) -> Any:
+) -> Any:  # noqa: ANN401
     """Make an authenticated HTTP request to GitHub REST API.
 
     Args:
@@ -271,22 +295,28 @@ def _request(
     try:
         resp = _get_client().request(method, url, headers=headers, params=params)
     except httpx.TimeoutException as exc:
-        raise ApiError(f"Request to {url} timed out: {exc}") from exc
+        msg = f"Request to {url} timed out: {exc}"
+        raise ApiError(msg) from exc
     except httpx.ConnectError as exc:
-        raise ApiError(f"Cannot connect to {url}: {exc}") from exc
+        msg = f"Cannot connect to {url}: {exc}"
+        raise ApiError(msg) from exc
     except httpx.NetworkError as exc:
-        raise ApiError(f"Network error contacting {url}: {exc}") from exc
+        msg = f"Network error contacting {url}: {exc}"
+        raise ApiError(msg) from exc
 
-    if resp.status_code == 401:
-        raise AuthError("GitHub token is invalid or expired.")
-    if resp.status_code == 403:
-        raise ApiError("Rate limited or forbidden.")
-    if resp.status_code >= 400:
-        raise ApiError(f"API error {resp.status_code}: {resp.text[:200]}")
+    if resp.status_code == HTTP_UNAUTHORIZED:
+        msg = "GitHub token is invalid or expired."
+        raise AuthError(msg)
+    if resp.status_code == HTTP_FORBIDDEN:
+        msg = "Rate limited or forbidden."
+        raise ApiError(msg)
+    if resp.status_code >= HTTP_BAD_REQUEST:
+        msg = f"API error {resp.status_code}: {resp.text[:200]}"
+        raise ApiError(msg)
     return resp.json()
 
 
-def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None) -> Any:
+def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None) -> Any:  # noqa: ANN401
     """Execute a GraphQL query against GitHub API.
 
     Args:
@@ -315,17 +345,24 @@ def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None)
             json=payload,
         )
     except httpx.TimeoutException as exc:
-        raise ApiError(f"GraphQL request timed out: {exc}") from exc
+        msg = f"GraphQL request timed out: {exc}"
+        raise ApiError(msg) from exc
     except httpx.ConnectError as exc:
-        raise ApiError(f"Cannot connect to GraphQL endpoint: {exc}") from exc
+        msg = f"Cannot connect to GraphQL endpoint: {exc}"
+        raise ApiError(msg) from exc
     except httpx.NetworkError as exc:
-        raise ApiError(f"Network error on GraphQL request: {exc}") from exc
+        msg = f"Network error on GraphQL request: {exc}"
+        raise ApiError(msg) from exc
 
-    if resp.status_code == 401:
-        raise AuthError("GitHub token is invalid or expired.")
-    if resp.status_code >= 400:
-        raise ApiError(f"GraphQL error {resp.status_code}: {resp.text[:200]}")
+    if resp.status_code == HTTP_UNAUTHORIZED:
+        msg = "GitHub token is invalid or expired."
+        raise AuthError(msg)
+    if resp.status_code >= HTTP_BAD_REQUEST:
+        msg = f"GraphQL error {resp.status_code}: {resp.text[:200]}"
+        raise ApiError(msg)
     data = resp.json()
     if "errors" in data:
-        raise ApiError(f"GraphQL errors: {json.dumps(data['errors'])[:300]}")
+        errors_json = json.dumps(data["errors"])[:300]
+        msg = f"GraphQL errors: {errors_json}"
+        raise ApiError(msg)
     return data

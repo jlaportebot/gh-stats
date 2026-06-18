@@ -32,7 +32,7 @@ class TestGetToken:
     def test_no_token_raises_auth_error(self):
         with (
             patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}, clear=False),
-            patch("subprocess.run", side_effect=FileNotFoundError),
+            patch("shutil.which", return_value=None),
             pytest.raises(AuthError, match="No GitHub token"),
         ):
             get_token()
@@ -40,6 +40,7 @@ class TestGetToken:
     def test_gh_cli_token(self):
         with (
             patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}, clear=False),
+            patch("shutil.which", return_value="/usr/bin/gh"),
             patch("subprocess.run") as mock_run,
         ):
             mock_result = MagicMock()
@@ -52,6 +53,7 @@ class TestGetToken:
     def test_gh_cli_nonzero_exit_raises(self):
         with (
             patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}, clear=False),
+            patch("shutil.which", return_value="/usr/bin/gh"),
             patch("subprocess.run") as mock_run,
         ):
             mock_result = MagicMock()
