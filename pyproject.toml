@@ -62,6 +62,22 @@ ignore = [
     "ISC001",   # redundant isinstance check
     "PLR0913",  # too many arguments (common in CLI)
     "TRY003",   # avoid specifying long messages outside exception
+    "PLR0917",  # too many positional arguments (CLI entry point)
+    "PLR0915",  # too many statements (CLI entry point)
+    "FBT001",   # boolean positional argument (Click options)
+    "DOC501",   # missing exception in docstring (CLI entry point)
+    "PLW0717",  # try clause too many statements (CLI entry point)
+    "PLC0415",  # import not at top level (lazy imports in CLI)
+    "B904",     # raise without from (SystemExit in CLI)
+    "RUF003",   # ambiguous dash in comments (Unicode)
+    "RUF002",   # ambiguous dash in docstrings (Unicode)
+    "PLR2004",  # magic value used in comparison (threshold constants)
+    "C901",     # function too complex (heatmap rendering)
+    "PLR0912",  # too many branches (heatmap rendering)
+    "PLR0914",  # too many local variables (heatmap rendering)
+    "SIM108",   # ternary operator suggestion (personal preference)
+    "DTZ001",   # datetime without tzinfo (explicit UTC handling)
+    "PLR6104",  # use -= operator (style preference)
 ]
 per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001", "S105", "PLC2701"] }
 
