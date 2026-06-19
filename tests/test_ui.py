@@ -7,8 +7,10 @@
 from rich.console import Console
 
 from gh_stats.ui import (
+    _render_html,
     render_heatmap,
     render_language_chart,
+    render_members_table,
     render_profile_card,
     render_repo_table,
     render_summary_bar,
@@ -123,3 +125,106 @@ class TestRenderSummaryBar:
         summary = {"push": 50, "pr": 10, "issue": 5}
         output = _render(render_summary_bar(summary))
         assert "Push" in output
+
+
+class TestRenderMembersTable:
+    """Tests for render_members_table."""
+
+    def test_basic_members(self):
+        members = [
+            {"login": "user1"},
+            {"login": "user2"},
+            {"login": "user3"},
+        ]
+        output = _render(render_members_table(members, limit=10))
+        assert "user1" in output
+        assert "user2" in output
+        assert "user3" in output
+
+    def test_limit_respected(self):
+        members = [{"login": f"user{i}"} for i in range(30)]
+        output = _render(render_members_table(members, limit=5))
+        # Should only show first 5
+        assert "user0" in output
+        assert "user4" in output
+        assert "user5" not in output
+
+    def test_empty_members(self):
+        output = _render(render_members_table([], limit=10))
+        assert "Organization Members" in output
+
+
+class TestRenderHTML:
+    """Tests for _render_html."""
+
+    def test_basic_html_output(self):
+        data = {
+            "target_type": "user",
+            "target_name": "testuser",
+            "year": 2026,
+            "stats": {
+                "login": "testuser",
+                "name": "Test User",
+                "public_repos": 10,
+                "followers": 50,
+                "following": 10,
+                "description": "A developer",
+            },
+            "total_contributions": 100,
+            "contributions": {"2026-01-15": 5},
+            "activities": [
+                {
+                    "type": "push",
+                    "repo": "testuser/repo1",
+                    "detail": "Pushed 2 commits",
+                    "time": "2026-01-15T10:00:00",
+                },
+            ],
+            "lang_stats": {"Python": 8, "Rust": 2},
+            "repo_stats": [
+                {
+                    "name": "testuser/repo1",
+                    "stars": 100,
+                    "forks": 10,
+                    "language": "Python",
+                    "description": "A repo",
+                },
+            ],
+            "activity_summary": {"push": 50, "pr": 5},
+            "members": [],
+        }
+        html = _render_html(data)
+        assert "<html" in html
+        assert "testuser" in html
+        assert "Test User" in html
+        assert "100" in html
+        assert "Python" in html
+        assert "repo1" in html
+
+    def test_org_html_output(self):
+        data = {
+            "target_type": "org",
+            "target_name": "testorg",
+            "year": 2026,
+            "stats": {
+                "login": "testorg",
+                "name": "Test Org",
+                "public_repos": 50,
+                "followers": 200,
+                "following": 5,
+                "description": "An organization",
+            },
+            "total_contributions": 500,
+            "contributions": {},
+            "activities": [],
+            "lang_stats": {},
+            "repo_stats": [],
+            "activity_summary": {},
+            "members": [{"login": "member1"}, {"login": "member2"}],
+        }
+        html = _render_html(data)
+        assert "<html" in html
+        assert "testorg" in html
+        assert "Test Org" in html
+        assert "member1" in html
+        assert "member2" in html

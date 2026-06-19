@@ -366,3 +366,184 @@ def _graphql(token: str, query: str, *, variables: dict[str, Any] | None = None)
         msg = f"GraphQL errors: {errors_json}"
         raise ApiError(msg)
     return data
+
+
+# ---------------------------------------------------------------------------
+# Organization API
+# ---------------------------------------------------------------------------
+
+
+def get_org_events(
+    token: str, org: str, *, per_page: int = 100, pages: int = 3
+) -> list[dict[str, Any]]:
+    """Fetch recent public events for an organization (paginated).
+
+    Returns:
+        List of event dicts from GitHub API.
+    """
+    events: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/orgs/{org}/events",
+                params={"per_page": per_page, "page": page},
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        events.extend(resp)
+    return events
+
+
+def get_org_repos(
+    token: str, org: str, *, per_page: int = 100, pages: int = 3
+) -> list[dict[str, Any]]:
+    """Fetch repos owned by the organization, sorted by updated date.
+
+    Returns:
+        List of repo dicts from GitHub API.
+    """
+    repos: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/orgs/{org}/repos",
+                params={
+                    "per_page": per_page,
+                    "page": page,
+                    "type": "all",
+                    "sort": "updated",
+                    "direction": "desc",
+                },
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        repos.extend(resp)
+    return repos
+
+
+def get_org_members(
+    token: str, org: str, *, per_page: int = 100, pages: int = 3
+) -> list[dict[str, Any]]:
+    """Fetch members of the organization (paginated).
+
+    Returns:
+        List of member dicts from GitHub API.
+    """
+    members: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/orgs/{org}/members",
+                params={"per_page": per_page, "page": page},
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        members.extend(resp)
+    return members
+
+
+def get_org_stats(token: str, org: str) -> dict[str, Any]:
+    """Fetch aggregate stats for the organization profile.
+
+    Returns:
+        Dict with org stats for the profile card.
+    """
+    try:
+        org_data = _request(token, "GET", f"https://api.github.com/orgs/{org}")
+    except ApiError as e:
+        if "404" in str(e):
+            return {}
+        raise
+    return {
+        "login": org_data.get("login", org),
+        "name": org_data.get("name") or org_data.get("login", org),
+        "description": org_data.get("description", ""),
+        "avatar_url": org_data.get("avatar_url", ""),
+        "public_repos": org_data.get("public_repos", 0),
+        "followers": org_data.get("followers", 0),
+        "following": org_data.get("following", 0),
+        "created_at": org_data.get("created_at", ""),
+    }
+
+
+def get_org_contributions(token: str, org: str, year: int | None = None) -> dict[str, int]:
+    """Fetch contribution counts for organization members via GraphQL.
+
+    Note: GitHub's GraphQL API doesn't provide a direct org-level contribution
+    calendar. This fetches top members' contributions as a proxy.
+
+    Returns:
+        Dict mapping date strings to aggregate contribution counts.
+    """
+    now = datetime.now(UTC)
+    if year is None:
+        year = now.year
+
+    from_date = f"{year}-01-01T00:00:00Z"
+    to_date = now.strftime("%Y-%m-%dT%H:%M:%SZ") if year == now.year else f"{year}-12-31T23:59:59Z"
+
+    query = """
+    query($login: String!, $from: DateTime!, $to: DateTime!) {
+      organization(login: $login) {
+        membersWithRepositories(first: 20) {
+          nodes {
+            login
+            contributionsCollection(from: $from, to: $to) {
+              contributionCalendar {
+                totalContributions
+                weeks {
+                  contributionDays {
+                    date
+                    contributionCount
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    try:
+        resp = _graphql(
+            token,
+            query,
+            variables={"login": org, "from": from_date, "to": to_date},
+        )
+    except ApiError:
+        return {}
+
+    contributions: dict[str, int] = {}
+    try:
+        members = resp["data"]["organization"]["membersWithRepositories"]["nodes"]
+        for member in members:
+            calendar = member["contributionsCollection"]["contributionCalendar"]
+            for week in calendar["weeks"]:
+                for day in week["contributionDays"]:
+                    if day["contributionCount"] > 0:
+                        date = day["date"]
+                        contributions[date] = contributions.get(date, 0) + day["contributionCount"]
+    except (KeyError, TypeError) as exc:
+        logger.warning("Failed to parse org contribution calendar: %s", exc)
+        return {}
+
+    return contributions
