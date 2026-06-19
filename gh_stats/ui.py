@@ -339,3 +339,280 @@ def render_summary_bar(summary: dict[str, int]) -> Panel:
 
     content = "  ".join(parts)
     return Panel(content, title="📈 Activity Summary", border_style="white", padding=(1, 2))
+
+
+def render_members_table(members: list[dict[str, Any]], limit: int = 20) -> Panel:
+    """Render a table of organization members.
+
+    Returns:
+        Rich Panel with members table.
+    """
+    table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
+    table.add_column("Member", style="bright_blue", min_width=20)
+    table.add_column("Role", style="green", width=12)
+
+    for member in members[:limit]:
+        login = member.get("login", "")
+        table.add_row(login, "Member")
+
+    return Panel(table, title="👥 Organization Members", border_style="bright_cyan", padding=(1, 2))
+
+
+def _render_html(data: dict[str, Any]) -> str:
+    """Render dashboard data as HTML.
+
+    Returns:
+        HTML string.
+    """
+    target_type = data.get("target_type", "user")
+    target_name = data.get("target_name", "")
+    year = data.get("year")
+    stats = data.get("stats", {})
+    total_contributions = data.get("total_contributions", 0)
+    activities = data.get("activities", [])
+    lang_stats = data.get("lang_stats", {})
+    repo_stats = data.get("repo_stats", [])
+    activity_summary = data.get("activity_summary", {})
+    members = data.get("members", [])
+
+    css = """
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px;
+               background: #0d1117; color: #c9d1d9; }
+        h1 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+        .card { background: #161b22; border: 1px solid #30363d;
+                border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .card h2 { margin-top: 0; color: #58a6ff; }
+        .stat-grid { display: grid;
+                     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                     gap: 15px; }
+        .stat { text-align: center; }
+        .stat-value { font-size: 2em; font-weight: bold; color: #58a6ff; }
+        .stat-label { color: #8b949e; font-size: 0.9em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #30363d; }
+        th { color: #58a6ff; }
+        tr:hover { background: #161b22; }
+        .bar { height: 20px;
+               background: linear-gradient(90deg, #238636, #2ea043);
+               border-radius: 4px; }
+        .bar-container { height: 20px; background: #21262d;
+                         border-radius: 4px; overflow: hidden; margin: 5px 0; }
+        .heatmap { font-family: monospace; line-height: 1.5; }
+        .heatmap .block { display: inline-block; width: 12px; height: 12px;
+                          margin: 1px; border-radius: 2px; }
+        .block-0 { background: #161b22; }
+        .block-1 { background: #1c6c26; }
+        .block-2 { background: #238636; }
+        .block-3 { background: #2ea043; }
+        .block-4 { background: #3fb950; }
+    """
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gh-stats — {target_type}: {target_name}</title>
+    <style>{css}</style>
+</head>
+<body>
+    <h1>📊 gh-stats — {target_type.title()}: {target_name}</h1>
+    <p style="color: #8b949e;">
+        Year: {year or "current"} |
+        Generated: {__import__("datetime").datetime.now().isoformat()}
+    </p>
+"""
+
+    # Profile card
+    html += f"""
+    <div class="card">
+        <h2>👤 Profile</h2>
+        <div class="stat-grid">
+            <div class="stat">
+                <div class="stat-value">{stats.get("name", target_name)}</div>
+                <div class="stat-label">Name</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{stats.get("login", target_name)}</div>
+                <div class="stat-label">Login</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{total_contributions}</div>
+                <div class="stat-label">Contributions</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{stats.get("public_repos", 0)}</div>
+                <div class="stat-label">Repositories</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{stats.get("followers", 0)}</div>
+                <div class="stat-label">Followers</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{stats.get("following", 0)}</div>
+                <div class="stat-label">Following</div>
+            </div>
+        </div>
+        {f"<p>{stats.get('description', '')}</p>" if stats.get("description") else ""}
+    </div>
+"""
+
+    # Activity summary
+    if activity_summary:
+        html += """
+    <div class="card">
+        <h2>📈 Activity Summary</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+        icons = {
+            "push": "⬆ Pushes",
+            "pr": "🔀 PRs",
+            "issue": "❗ Issues",
+            "review": "👁 Reviews",
+            "release": "🏷 Releases",
+            "star": "⭐ Stars",
+            "fork": "🍴 Forks",
+            "create": "+ Creates",
+            "delete": "- Deletes",
+            "comment": "💬 Comments",
+        }
+        for activity_type, count in sorted(activity_summary.items(), key=lambda x: -x[1]):
+            label = icons.get(activity_type, activity_type)
+            html += f"                <tr><td>{label}</td><td>{count}</td></tr>\n"
+        html += """            </tbody>
+        </table>
+    </div>
+"""
+
+    # Language chart
+    if lang_stats:
+        html += """
+    <div class="card">
+        <h2>🔤 Languages</h2>
+"""
+        total = sum(lang_stats.values())
+        max_count = max(lang_stats.values())
+        for lang, count in lang_stats.items():
+            pct = count / total * 100
+            bar_width = int(count / max_count * 100)
+            html += f"""
+        <div style="margin: 10px 0;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span><strong>{lang}</strong></span>
+                <span>{count} repos ({pct:.0f}%)</span>
+            </div>
+            <div class="bar-container"><div class="bar" style="width: {bar_width}%"></div></div>
+        </div>
+"""
+        html += """    </div>
+"""
+
+    # Top repos
+    if repo_stats:
+        html += """
+    <div class="card">
+        <h2>🏆 Top Repositories</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Repository</th>
+                    <th>⭐ Stars</th>
+                    <th>🍴 Forks</th>
+                    <th>Language</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+        for repo in repo_stats:
+            html += f"""                <tr>
+                    <td>{repo.get("name", "")}</td>
+                    <td>{repo.get("stars", 0)}</td>
+                    <td>{repo.get("forks", 0)}</td>
+                    <td>{repo.get("language", "—")}</td>
+                    <td>{repo.get("description", "")}</td>
+                </tr>
+"""
+        html += """            </tbody>
+        </table>
+    </div>
+"""
+
+    # Org members
+    if members:
+        html += """
+    <div class="card">
+        <h2>👥 Organization Members</h2>
+        <table>
+            <thead><tr><th>Member</th></tr></thead>
+            <tbody>
+"""
+        for member in members:
+            login = member.get("login", "")
+            html += f"                <tr><td>{login}</td></tr>\n"
+        html += """            </tbody>
+        </table>
+    </div>
+"""
+
+    # Activities
+    if activities:
+        html += """
+    <div class="card">
+        <h2>🕐 Recent Activity</h2>
+        <table>
+            <thead><tr><th>When</th><th>Type</th><th>Repository</th><th>Detail</th></tr></thead>
+            <tbody>
+"""
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        type_icons = {
+            "push": "⬆ Push",
+            "pr": "🔀 PR",
+            "issue": "❗ Issue",
+            "review": "👁 Review",
+            "release": "🏷 Release",
+            "star": "⭐ Star",
+            "fork": "🍴 Fork",
+            "create": "+ Create",
+            "delete": "- Delete",
+            "comment": "💬 Comment",
+        }
+        for activity in activities:
+            time = activity.get("time", now)
+            if isinstance(time, datetime):
+                delta = now - time
+                if delta.days == 0:
+                    when = f"{delta.seconds // 3600}h ago" if delta.seconds >= 3600 else "just now"
+                elif delta.days == 1:
+                    when = "yesterday"
+                elif delta.days < 7:
+                    when = f"{delta.days}d ago"
+                else:
+                    when = time.strftime("%b %d")
+            else:
+                when = str(time)
+            type_label = type_icons.get(activity["type"], activity["type"])
+            repo = activity.get("repo", "")
+            detail = activity.get("detail", "")[:80]
+            html += (
+                f"                <tr><td>{when}</td><td>{type_label}</td>"
+                f"<td>{repo}</td><td>{detail}</td></tr>\n"
+            )
+        html += """            </tbody>
+        </table>
+    </div>
+"""
+
+    html += """</body>
+</html>"""
+    return html

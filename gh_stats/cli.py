@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -21,15 +24,22 @@ from .api import (
     ApiError,
     AuthError,
     get_contributions,
+    get_org_contributions,
+    get_org_events,
+    get_org_members,
+    get_org_repos,
+    get_org_stats,
     get_token,
     get_user_events,
     get_user_repos,
     get_user_stats,
 )
 from .ui import (
+    _render_html,
     render_activity_timeline,
     render_heatmap,
     render_language_chart,
+    render_members_table,
     render_profile_card,
     render_repo_table,
     render_summary_bar,
@@ -45,6 +55,13 @@ console = Console()
     "username",
     default=None,
     help="GitHub username (defaults to authenticated user)",
+)
+@click.option(
+    "-o",
+    "--org",
+    "orgname",
+    default=None,
+    help="GitHub organization name (alternative to --user)",
 )
 @click.option(
     "-y",
@@ -83,14 +100,31 @@ console = Console()
     default=False,
     help="Skip activity timeline",
 )
+@click.option(
+    "--output",
+    "output_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Export dashboard data to JSON file",
+)
+@click.option(
+    "--format",
+    "export_format",
+    type=click.Choice(["json", "html"]),
+    default="json",
+    help="Export format (json or html)",
+)
 @click.version_option(version=__version__, prog_name="gh-stats")
 def main(
     username: str | None,
+    orgname: str | None,
     year: int | None,
     limit: int,
     show_repos: bool,
     no_heatmap: bool,
     no_activity: bool,
+    output_path: Path | None,
+    export_format: str,
 ) -> None:
     """📊 gh-stats — A beautiful terminal dashboard for your GitHub activity.
 
@@ -99,6 +133,13 @@ def main(
 
     Authentication: Uses `gh` CLI token or GH_TOKEN environment variable.
     """
+    if username and orgname:
+        console.print("[bold red]Error:[/bold red] Cannot specify both --user and --org")
+        raise SystemExit(1)
+
+    target_type = "org" if orgname else "user"
+    target_name = orgname or username
+
     try:
         with Progress(
             SpinnerColumn(),
@@ -110,40 +151,91 @@ def main(
             task = progress.add_task("Authenticating with GitHub...", total=None)
             token = get_token()
 
-            # Resolve username
-            if username is None:
+            # Resolve username/orgname
+            if target_name is None:
                 from .api import get_authenticated_user
 
                 user_data = get_authenticated_user(token)
-                username = user_data.get("login", "")
-                if not username:
+                target_name = user_data.get("login", "")
+                if not target_name:
                     console.print("[red]Could not determine GitHub username.[/red]")
                     raise SystemExit(1)
             else:
                 user_data = None
 
-            # Fetch profile stats (reuse authenticated_user to avoid duplicate API call)
-            progress.update(task, description=f"Fetching profile for [bold]{username}[/bold]...")
-            stats = get_user_stats(token, username, authenticated_user=user_data)
+            # Fetch profile stats
+            progress.update(
+                task,
+                description=(f"Fetching {target_type} profile for [bold]{target_name}[/bold]..."),
+            )
+            if orgname:
+                stats = get_org_stats(token, orgname)
+                if not stats:
+                    console.print(f"[bold red]Organization not found:[/bold red] {orgname}")
+                    raise SystemExit(1)
+            else:
+                stats = get_user_stats(token, target_name, authenticated_user=user_data)
 
             # Fetch contributions
             progress.update(task, description="Loading contribution data...")
-            contributions = get_contributions(token, username, year=year)
+            if orgname:
+                contributions = get_org_contributions(token, orgname, year=year)
+            else:
+                contributions = get_contributions(token, target_name, year=year)
             total_contributions = sum(contributions.values())
 
             # Fetch events
             progress.update(task, description="Loading recent activity...")
-            events = get_user_events(token, username, pages=3)
+            if orgname:
+                events = get_org_events(token, orgname, pages=3)
+            else:
+                events = get_user_events(token, target_name, pages=3)
             activities = categorize_events(events)
 
             # Fetch repos
             progress.update(task, description="Loading repositories...")
-            repos = get_user_repos(token, username, pages=3)
+            if orgname:
+                repos = get_org_repos(token, orgname, pages=3)
+            else:
+                repos = get_user_repos(token, target_name, pages=3)
+
+            # Fetch members (org only)
+            members = []
+            if orgname:
+                progress.update(task, description="Loading organization members...")
+                members = get_org_members(token, orgname, pages=3)
 
             # Compute derived stats
             lang_stats = compute_language_stats(repos)
             repo_stats = compute_repo_stats(repos)
             activity_summary = compute_activity_summary(activities)
+
+        # Prepare export data
+        export_data = {
+            "target_type": target_type,
+            "target_name": target_name,
+            "year": year,
+            "stats": stats,
+            "total_contributions": total_contributions,
+            "contributions": contributions,
+            "activities": activities[:limit],
+            "lang_stats": lang_stats,
+            "repo_stats": repo_stats[:10],
+            "activity_summary": activity_summary,
+        }
+        if orgname:
+            export_data["members"] = [{"login": m.get("login", "")} for m in members]
+
+        # Export if requested
+        if output_path:
+            if export_format == "json":
+                output_path.write_text(json.dumps(export_data, indent=2, default=str))
+            elif export_format == "html":
+                html_content = _render_html(export_data)
+                output_path.write_text(html_content)
+            console.print(f"[green]Exported to {output_path}[/green]")
+            if not (no_heatmap and no_activity and not show_repos):
+                console.print()
 
         # ── Render the dashboard ──────────────────────────────────────
         console.print()
@@ -173,6 +265,11 @@ def main(
         # Top repos
         if show_repos:
             console.print(render_repo_table(repo_stats))
+            console.print()
+
+        # Org members (if org)
+        if orgname and members:
+            console.print(render_members_table(members))
             console.print()
 
     except AuthError as e:
