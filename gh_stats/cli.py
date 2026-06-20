@@ -19,6 +19,7 @@ from .activity import (
     compute_activity_summary,
     compute_language_stats,
     compute_repo_stats,
+    compute_streaks,
 )
 from .api import (
     ApiError,
@@ -42,6 +43,7 @@ from .ui import (
     render_members_table,
     render_profile_card,
     render_repo_table,
+    render_streaks,
     render_summary_bar,
 )
 
@@ -94,6 +96,13 @@ console = Console()
     help="Skip contribution heatmap",
 )
 @click.option(
+    "--no-streaks",
+    "no_streaks",
+    is_flag=True,
+    default=False,
+    help="Skip contribution streaks",
+)
+@click.option(
     "--no-activity",
     "no_activity",
     is_flag=True,
@@ -122,6 +131,7 @@ def main(
     limit: int,
     show_repos: bool,
     no_heatmap: bool,
+    no_streaks: bool,
     no_activity: bool,
     output_path: Path | None,
     export_format: str,
@@ -209,6 +219,7 @@ def main(
             lang_stats = compute_language_stats(repos)
             repo_stats = compute_repo_stats(repos)
             activity_summary = compute_activity_summary(activities)
+            streaks = compute_streaks(contributions)
 
         # Prepare export data
         export_data = {
@@ -222,6 +233,7 @@ def main(
             "lang_stats": lang_stats,
             "repo_stats": repo_stats[:10],
             "activity_summary": activity_summary,
+            "streaks": streaks,
         }
         if orgname:
             export_data["members"] = [{"login": m.get("login", "")} for m in members]
@@ -234,7 +246,7 @@ def main(
                 html_content = _render_html(export_data)
                 output_path.write_text(html_content)
             console.print(f"[green]Exported to {output_path}[/green]")
-            if not (no_heatmap and no_activity and not show_repos):
+            if not (no_heatmap and no_streaks and no_activity and not show_repos):
                 console.print()
 
         # ── Render the dashboard ──────────────────────────────────────
@@ -247,6 +259,11 @@ def main(
         # Contribution heatmap
         if not no_heatmap:
             console.print(render_heatmap(contributions, year=year))
+            console.print()
+
+        # Contribution streaks
+        if not no_streaks:
+            console.print(render_streaks(streaks))
             console.print()
 
         # Activity summary bar

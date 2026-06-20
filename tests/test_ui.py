@@ -13,6 +13,7 @@ from gh_stats.ui import (
     render_members_table,
     render_profile_card,
     render_repo_table,
+    render_streaks,
     render_summary_bar,
 )
 
@@ -228,3 +229,52 @@ class TestRenderHTML:
         assert "Test Org" in html
         assert "member1" in html
         assert "member2" in html
+
+
+class TestRenderStreaks:
+    """Tests for render_streaks."""
+
+    def test_empty_streaks(self):
+        streaks = {"current_streak": 0, "longest_streak": 0}
+        output = _render(render_streaks(streaks))
+        assert "No streak data" in output
+
+    def test_current_streak_only(self):
+        streaks = {"current_streak": 5, "longest_streak": 10}
+        output = _render(render_streaks(streaks))
+        assert "Current Streak" in output
+        assert "5 days" in output
+        assert "Longest Streak" in output
+        assert "10 days" in output
+
+    def test_single_day_streak(self):
+        streaks = {"current_streak": 1, "longest_streak": 1}
+        output = _render(render_streaks(streaks))
+        assert "1 day" in output
+        assert "days" not in output or "1 day" in output  # singular "day"
+
+    def test_broken_streak(self):
+        streaks = {"current_streak": 0, "longest_streak": 7}
+        output = _render(render_streaks(streaks))
+        assert "broken today" in output
+        assert "7 days" in output
+
+    def test_week_milestone(self):
+        streaks = {"current_streak": 7, "longest_streak": 7}
+        output = _render(render_streaks(streaks))
+        assert "(week!)" in output
+
+    def test_month_milestone(self):
+        streaks = {"current_streak": 30, "longest_streak": 30}
+        output = _render(render_streaks(streaks))
+        assert "(month!)" in output
+
+    def test_century_milestone(self):
+        streaks = {"current_streak": 100, "longest_streak": 100}
+        output = _render(render_streaks(streaks))
+        assert "(century!)" in output
+
+    def test_year_milestone(self):
+        streaks = {"current_streak": 365, "longest_streak": 365}
+        output = _render(render_streaks(streaks))
+        assert "(year!)" in output or "(year+!)" in output

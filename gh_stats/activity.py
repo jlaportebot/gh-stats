@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from operator import itemgetter
 from typing import Any
 
@@ -235,3 +235,60 @@ def _parse_dt(dt_str: str) -> datetime:
     except (ValueError, AttributeError):
         logger.warning("Failed to parse datetime %r, using current UTC time", dt_str)
         return datetime.now(UTC)
+
+
+# ---------------------------------------------------------------------------
+# Streak computation
+# ---------------------------------------------------------------------------
+
+
+def compute_streaks(contributions: dict[str, int]) -> dict[str, int]:
+    """Compute contribution streaks from daily contribution counts.
+
+    Args:
+        contributions: Dict mapping date strings (YYYY-MM-DD) to contribution counts.
+
+    Returns:
+        Dict with keys:
+            - "current_streak": Consecutive days with contributions ending today.
+            - "longest_streak": Longest consecutive streak in the history.
+    """
+    if not contributions:
+        return {"current_streak": 0, "longest_streak": 0}
+
+    # Parse dates and filter to only days with contributions
+    contrib_dates = {
+        datetime.fromisoformat(date_str).date()
+        for date_str, count in contributions.items()
+        if count > 0
+    }
+
+    if not contrib_dates:
+        return {"current_streak": 0, "longest_streak": 0}
+
+    today = datetime.now(UTC).date()
+    sorted_dates = sorted(contrib_dates)
+
+    # Compute all streaks
+    streaks: list[int] = []
+    current_streak_len = 1
+
+    for i in range(1, len(sorted_dates)):
+        if (sorted_dates[i] - sorted_dates[i - 1]).days == 1:
+            current_streak_len += 1
+        else:
+            streaks.append(current_streak_len)
+            current_streak_len = 1
+    streaks.append(current_streak_len)
+
+    longest_streak = max(streaks)
+
+    # Compute current streak (must include today or yesterday)
+    # Start from today and go backwards
+    current_streak = 0
+    check_date = today
+    while check_date in contrib_dates:
+        current_streak += 1
+        check_date -= timedelta(days=1)
+
+    return {"current_streak": current_streak, "longest_streak": longest_streak}

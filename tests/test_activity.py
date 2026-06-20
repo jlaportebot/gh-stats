@@ -268,3 +268,115 @@ class TestParseDt:
     def test_empty_string_falls_back(self):
         result = _parse_dt("")
         assert isinstance(result, datetime)
+
+
+class TestComputeStreaks:
+    """Tests for compute_streaks."""
+
+    def test_current_streak_empty(self):
+        from gh_stats.activity import compute_streaks
+
+        contributions = {}
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 0
+        assert result["longest_streak"] == 0
+
+    def test_current_streak_single_day(self):
+        from datetime import UTC, datetime, timedelta
+
+        from gh_stats.activity import compute_streaks
+
+        today = datetime.now(UTC).date().isoformat()
+        contributions = {today: 5}
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 1
+        assert result["longest_streak"] == 1
+
+    def test_current_streak_consecutive_days(self):
+        from datetime import UTC, datetime, timedelta
+
+        from gh_stats.activity import compute_streaks
+
+        today = datetime.now(UTC).date()
+        contributions = {
+            (today - timedelta(days=0)).isoformat(): 3,
+            (today - timedelta(days=1)).isoformat(): 2,
+            (today - timedelta(days=2)).isoformat(): 1,
+        }
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 3
+        assert result["longest_streak"] == 3
+
+    def test_current_streak_broken_by_gap(self):
+        from datetime import UTC, datetime, timedelta
+
+        from gh_stats.activity import compute_streaks
+
+        today = datetime.now(UTC).date()
+        contributions = {
+            (today - timedelta(days=0)).isoformat(): 3,
+            (today - timedelta(days=1)).isoformat(): 2,
+            (today - timedelta(days=3)).isoformat(): 1,  # gap at day 2
+        }
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 2  # today + yesterday
+        assert result["longest_streak"] == 2
+
+    def test_longest_streak_historical(self):
+        from datetime import UTC, datetime, timedelta
+
+        from gh_stats.activity import compute_streaks
+
+        today = datetime.now(UTC).date()
+        contributions = {
+            # Current streak: 2 days
+            (today - timedelta(days=0)).isoformat(): 3,
+            (today - timedelta(days=1)).isoformat(): 2,
+            # Gap
+            # Historical streak: 5 days
+            (today - timedelta(days=10)).isoformat(): 1,
+            (today - timedelta(days=11)).isoformat(): 2,
+            (today - timedelta(days=12)).isoformat(): 1,
+            (today - timedelta(days=13)).isoformat(): 3,
+            (today - timedelta(days=14)).isoformat(): 1,
+        }
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 2
+        assert result["longest_streak"] == 5
+
+    def test_streak_ends_at_today(self):
+        from datetime import UTC, datetime, timedelta
+
+        from gh_stats.activity import compute_streaks
+
+        today = datetime.now(UTC).date()
+        # Streak ending yesterday (today has no contributions)
+        contributions = {
+            (today - timedelta(days=1)).isoformat(): 3,
+            (today - timedelta(days=2)).isoformat(): 2,
+            (today - timedelta(days=3)).isoformat(): 1,
+        }
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 0  # broken today
+        assert result["longest_streak"] == 3
+
+    def test_multiple_streaks_same_length(self):
+        from datetime import UTC, datetime, timedelta
+
+        from gh_stats.activity import compute_streaks
+
+        today = datetime.now(UTC).date()
+        contributions = {
+            # Streak 1: 3 days
+            (today - timedelta(days=0)).isoformat(): 1,
+            (today - timedelta(days=1)).isoformat(): 1,
+            (today - timedelta(days=2)).isoformat(): 1,
+            # Gap
+            # Streak 2: 3 days
+            (today - timedelta(days=10)).isoformat(): 1,
+            (today - timedelta(days=11)).isoformat(): 1,
+            (today - timedelta(days=12)).isoformat(): 1,
+        }
+        result = compute_streaks(contributions)
+        assert result["current_streak"] == 3
+        assert result["longest_streak"] == 3
