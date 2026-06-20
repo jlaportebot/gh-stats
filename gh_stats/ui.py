@@ -341,6 +341,70 @@ def render_summary_bar(summary: dict[str, int]) -> Panel:
     return Panel(content, title="📈 Activity Summary", border_style="white", padding=(1, 2))
 
 
+def render_streaks(streaks: dict[str, int]) -> Panel:
+    """Render contribution streaks panel.
+
+    Args:
+        streaks: Dict with "current_streak" and "longest_streak" keys.
+
+    Returns:
+        Rich Panel with streak information.
+    """
+    current = streaks.get("current_streak", 0)
+    longest = streaks.get("longest_streak", 0)
+
+    if current == 0 and longest == 0:
+        return Panel(
+            Text(" No streak data available", style="dim"),
+            title="🔥 Contribution Streaks",
+            border_style="bright_red",
+            padding=(1, 2),
+        )
+
+    # Build streak visualization
+    text = Text()
+
+    # Current streak
+    if current > 0:
+        text.append(" 🔥 Current Streak: ", style="bold bright_red")
+        text.append(f"{current} day{'s' if current != 1 else ''}", style="bold white")
+        if current >= 7:
+            text.append(" (week!)", style="bright_yellow")
+        elif current >= 30:
+            text.append(" (month!)", style="bright_magenta")
+        elif current >= 100:
+            text.append(" (century!)", style="bright_cyan")
+        elif current >= 365:
+            text.append(" (year!)", style="bright_green")
+        text.append("\n")
+    else:
+        text.append(" 🔥 Current Streak: ", style="bold bright_red")
+        text.append("0 days (broken today)\n", style="dim")
+
+    # Longest streak
+    text.append(" 🏆 Longest Streak:  ", style="bold bright_yellow")
+    text.append(f"{longest} day{'s' if longest != 1 else ''}", style="bold white")
+    if longest >= 365:
+        text.append(" (year+!)", style="bright_green")
+    elif longest >= 100:
+        text.append(" (century!)", style="bright_cyan")
+    elif longest >= 30:
+        text.append(" (month!)", style="bright_magenta")
+    elif longest >= 7:
+        text.append(" (week!)", style="bright_yellow")
+    text.append("\n")
+
+    # Streak status
+    if current > 0:
+        text.append("\n 💪 Keep it going! ", style="bold green")
+        text.append("Contribute today to extend your streak.", style="dim")
+    else:
+        text.append("\n 📅 Start a new streak! ", style="bold blue")
+        text.append("Make a contribution today to begin.", style="dim")
+
+    return Panel(text, title="🔥 Contribution Streaks", border_style="bright_red", padding=(1, 2))
+
+
 def render_members_table(members: list[dict[str, Any]], limit: int = 20) -> Panel:
     """Render a table of organization members.
 
@@ -374,6 +438,7 @@ def _render_html(data: dict[str, Any]) -> str:
     repo_stats = data.get("repo_stats", [])
     activity_summary = data.get("activity_summary", {})
     members = data.get("members", [])
+    streaks = data.get("streaks", {})
 
     css = """
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
@@ -489,6 +554,27 @@ def _render_html(data: dict[str, Any]) -> str:
             html += f"                <tr><td>{label}</td><td>{count}</td></tr>\n"
         html += """            </tbody>
         </table>
+    </div>
+"""
+
+    # Contribution streaks
+    if streaks:
+        current = streaks.get("current_streak", 0)
+        longest = streaks.get("longest_streak", 0)
+        if current > 0 or longest > 0:
+            html += f"""
+    <div class="card">
+        <h2>🔥 Contribution Streaks</h2>
+        <div class="stat-grid">
+            <div class="stat">
+                <div class="stat-value">{current}</div>
+                <div class="stat-label">Current Streak</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{longest}</div>
+                <div class="stat-label">Longest Streak</div>
+            </div>
+        </div>
     </div>
 """
 
