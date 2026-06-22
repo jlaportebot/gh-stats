@@ -7,12 +7,18 @@
 import logging
 from datetime import UTC, datetime
 
+import pytest
+
 from gh_stats.activity import (
     _parse_dt,
     categorize_events,
     compute_activity_summary,
+    compute_comparison_summary,
+    compute_contribution_patterns,
+    compute_growth_metrics,
     compute_language_stats,
     compute_repo_stats,
+    compute_streaks,
 )
 
 
@@ -274,7 +280,6 @@ class TestComputeStreaks:
     """Tests for compute_streaks."""
 
     def test_current_streak_empty(self):
-        from gh_stats.activity import compute_streaks
 
         contributions = {}
         result = compute_streaks(contributions)
@@ -284,8 +289,6 @@ class TestComputeStreaks:
     def test_current_streak_single_day(self):
         from datetime import UTC, datetime, timedelta
 
-        from gh_stats.activity import compute_streaks
-
         today = datetime.now(UTC).date().isoformat()
         contributions = {today: 5}
         result = compute_streaks(contributions)
@@ -294,8 +297,6 @@ class TestComputeStreaks:
 
     def test_current_streak_consecutive_days(self):
         from datetime import UTC, datetime, timedelta
-
-        from gh_stats.activity import compute_streaks
 
         today = datetime.now(UTC).date()
         contributions = {
@@ -310,8 +311,6 @@ class TestComputeStreaks:
     def test_current_streak_broken_by_gap(self):
         from datetime import UTC, datetime, timedelta
 
-        from gh_stats.activity import compute_streaks
-
         today = datetime.now(UTC).date()
         contributions = {
             (today - timedelta(days=0)).isoformat(): 3,
@@ -324,8 +323,6 @@ class TestComputeStreaks:
 
     def test_longest_streak_historical(self):
         from datetime import UTC, datetime, timedelta
-
-        from gh_stats.activity import compute_streaks
 
         today = datetime.now(UTC).date()
         contributions = {
@@ -347,8 +344,6 @@ class TestComputeStreaks:
     def test_streak_ends_at_today(self):
         from datetime import UTC, datetime, timedelta
 
-        from gh_stats.activity import compute_streaks
-
         today = datetime.now(UTC).date()
         # Streak ending yesterday (today has no contributions)
         contributions = {
@@ -362,8 +357,6 @@ class TestComputeStreaks:
 
     def test_multiple_streaks_same_length(self):
         from datetime import UTC, datetime, timedelta
-
-        from gh_stats.activity import compute_streaks
 
         today = datetime.now(UTC).date()
         contributions = {
@@ -380,3 +373,115 @@ class TestComputeStreaks:
         result = compute_streaks(contributions)
         assert result["current_streak"] == 3
         assert result["longest_streak"] == 3
+
+
+class TestComputeContributionPatterns:
+    """Tests for compute_contribution_patterns."""
+
+    def test_empty_contributions(self):
+        result = compute_contribution_patterns({})
+        assert result["by_weekday"] == {}
+        assert result["most_active_day"] == ""
+        assert result["least_active_day"] == ""
+        assert result["by_month"] == {}
+        assert result["peak_month"] == ""
+        assert result["active_days"] == 0
+        assert result["total_days"] == 0
+        assert result["consistency_pct"] == pytest.approx(0.0)
+        assert result["avg_per_active_day"] == pytest.approx(0.0)
+        assert result["max_daily"] == 0
+
+    def test_computes_weekday_patterns(self):
+        from datetime import UTC, datetime
+
+        contributions = {
+            "2024-01-01": 5,  # Monday
+            "2024-01-02": 3,  # Tuesday
+            "2024-01-03": 2,  # Wednesday
+            "2024-01-04": 1,  # Thursday
+            "2024-01-05": 4,  # Friday
+            "2024-01-06": 0,  # Saturday
+            "2024-01-07": 0,  # Sunday
+        }
+        result = compute_contribution_patterns(contributions)
+        assert result["by_weekday"]["Mon"] == 5
+        assert result["by_weekday"]["Tue"] == 3
+        assert result["by_weekday"]["Wed"] == 2
+        assert result["by_weekday"]["Thu"] == 1
+        assert result["by_weekday"]["Fri"] == 4
+        assert result["by_weekday"]["Sat"] == 0
+        assert result["by_weekday"]["Sun"] == 0
+        assert result["most_active_day"] == "Mon"
+        assert result["least_active_day"] in {"Sat", "Sun"}
+        assert result["active_days"] == 5
+        assert result["total_days"] == 7
+        assert result["consistency_pct"] == round(5 / 7 * 100, 1)
+
+    def test_computes_monthly_patterns(self):
+        contributions = {
+            "2024-01-15": 10,
+            "2024-02-20": 5,
+            "2024-03-10": 3,
+        }
+        result = compute_contribution_patterns(contributions)
+        assert result["by_month"]["Jan"] == 10
+        assert result["by_month"]["Feb"] == 5
+        assert result["by_month"]["Mar"] == 3
+        assert result["peak_month"] == "Jan"
+        assert result["max_daily"] == 10
+        assert result["avg_per_active_day"] == pytest.approx(6.0)
+
+    def test_handles_invalid_dates(self):
+        contributions = {
+            "2024-01-01": 5,
+            "not-a-date": 3,
+            "": 2,
+        }
+        result = compute_contribution_patterns(contributions)
+        assert result["by_weekday"]["Mon"] == 5
+        assert result["total_days"] == 3  # counts all keys
+        assert result["active_days"] == 1  # only valid date with count > 0
+
+
+class TestComputeGrowthMetrics:
+    """Tests for compute_growth_metrics."""
+
+    def test_computes_growth_from_zero(self):
+        contrib_a = {}
+        contrib_b = {"2024-01-01": 5, "2024-01-02": 3}
+        result = compute_growth_metrics(contrib_a, contrib_b)
+        assert result["total_growth_pct"] == pytest.approx(100.0)
+        assert result["active_days_growth_pct"] == pytest.approx(100.0)
+
+    def test_computes_positive_growth(self):
+        contrib_a = {"2024-01-01": 5, "2024-01-02": 5}  # total 10, 2 active days
+        contrib_b = {
+            "2024-01-01": 10,
+            "2024-01-02": 10,
+            "2024-01-03": 10,
+        }  # total 30, 3 active days
+        result = compute_growth_metrics(contrib_a, contrib_b)
+        assert result["total_growth_pct"] == pytest.approx(200.0)
+        assert result["active_days_growth_pct"] == pytest.approx(50.0)
+        assert "verdict" in result
+
+    def test_computes_decline(self):
+        contrib_a = {"2024-01-01": 10, "2024-01-02": 10, "2024-01-03": 10}
+        contrib_b = {"2024-01-01": 5}
+        result = compute_growth_metrics(contrib_a, contrib_b)
+        assert result["total_growth_pct"] < 0
+        assert "decline" in result["verdict"].lower()
+
+    def test_consistency_change(self):
+        contrib_a = {
+            "2024-01-01": 1,
+            "2024-01-02": 0,
+            "2024-01-03": 1,
+        }  # 2/3 = 66.7%
+        contrib_b = {
+            "2024-01-01": 1,
+            "2024-01-02": 1,
+            "2024-01-03": 1,
+        }  # 3/3 = 100%
+        result = compute_growth_metrics(contrib_a, contrib_b)
+        assert result["consistency_change_pct"] == pytest.approx(33.3, abs=0.1)
