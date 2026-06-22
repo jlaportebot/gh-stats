@@ -520,6 +520,7 @@ def compare(
         console.print("[bold red]Error:[/bold red] Cannot mix --user-* and --org-* options")
         raise SystemExit(1)
 
+    target_name = ""
     # Time-period comparison: same target, different years
     time_period_mode = (year_a is not None or year_b is not None) and (
         user_b is None and org_b is None
