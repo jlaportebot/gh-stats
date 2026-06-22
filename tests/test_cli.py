@@ -34,7 +34,7 @@ class TestCLIHelp:
 
     def test_help_shows_user_option(self):
         runner = CliRunner()
-        result = runner.invoke(main, ["--help"])
+        result = runner.invoke(main, ["show", "--help"])
         assert "--user" in result.output
 
 
@@ -47,7 +47,7 @@ class TestCLINoToken:
             patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}, clear=False),
             patch("subprocess.run", side_effect=FileNotFoundError),
         ):
-            result = runner.invoke(main, ["--user", "testuser"])
+            result = runner.invoke(main, ["show", "--user", "testuser"])
             assert result.exit_code != 0
 
 
@@ -95,7 +95,7 @@ class TestCLIWithToken:
             patch("gh_stats.cli.get_contributions", return_value={"2026-01-15": 5}),
         ):
             runner = CliRunner()
-            result = runner.invoke(main, ["--user", "testuser"])
+            result = runner.invoke(main, ["show", "--user", "testuser"])
             assert result.exit_code == 0
 
     def test_successful_run_without_user(self):
@@ -114,14 +114,14 @@ class TestCLIWithToken:
 
         with (
             patch("gh_stats.cli.get_token", return_value="fake_token"),
-            patch("gh_stats.api.get_authenticated_user", return_value=mock_user),
+            patch("gh_stats.cli.get_authenticated_user", return_value=mock_user),
             patch("gh_stats.cli.get_user_stats", return_value=mock_user),
             patch("gh_stats.cli.get_user_events", return_value=[]),
             patch("gh_stats.cli.get_user_repos", return_value=[]),
             patch("gh_stats.cli.get_contributions", return_value={}),
         ):
             runner = CliRunner()
-            result = runner.invoke(main, [])
+            result = runner.invoke(main, ["show"])
             assert result.exit_code == 0
 
     def test_authenticated_user_reuse(self):
@@ -140,14 +140,14 @@ class TestCLIWithToken:
 
         with (
             patch("gh_stats.cli.get_token", return_value="fake_token"),
-            patch("gh_stats.api.get_authenticated_user", return_value=mock_user),
+            patch("gh_stats.cli.get_authenticated_user", return_value=mock_user),
             patch("gh_stats.cli.get_user_stats", return_value=mock_user) as mock_stats,
             patch("gh_stats.cli.get_user_events", return_value=[]),
             patch("gh_stats.cli.get_user_repos", return_value=[]),
             patch("gh_stats.cli.get_contributions", return_value={}),
         ):
             runner = CliRunner()
-            result = runner.invoke(main, [])
+            result = runner.invoke(main, ["show"])
             assert result.exit_code == 0
             # Verify authenticated_user was passed to avoid double API call
             assert mock_stats.call_count == 1
@@ -158,7 +158,7 @@ class TestCLIWithToken:
         """AuthError should exit non-zero."""
         with patch("gh_stats.cli.get_token", side_effect=AuthError("no token")):
             runner = CliRunner()
-            result = runner.invoke(main, ["--user", "testuser"])
+            result = runner.invoke(main, ["show", "--user", "testuser"])
             assert result.exit_code != 0
 
     def test_api_error_exits(self):
@@ -168,7 +168,7 @@ class TestCLIWithToken:
             patch("gh_stats.cli.get_user_stats", side_effect=ApiError("API down")),
         ):
             runner = CliRunner()
-            result = runner.invoke(main, ["--user", "testuser"])
+            result = runner.invoke(main, ["show", "--user", "testuser"])
             assert result.exit_code != 0
 
 
@@ -220,7 +220,7 @@ class TestCLIOrg:
             patch("gh_stats.cli.get_org_contributions", return_value={"2026-01-15": 10}),
         ):
             runner = CliRunner()
-            result = runner.invoke(main, ["--org", "testorg"])
+            result = runner.invoke(main, ["show", "--org", "testorg"])
             assert result.exit_code == 0
             assert "Test Org" in result.output
             assert "member1" in result.output
@@ -232,14 +232,14 @@ class TestCLIOrg:
             patch("gh_stats.cli.get_org_stats", return_value={}),
         ):
             runner = CliRunner()
-            result = runner.invoke(main, ["--org", "nonexistentorg"])
+            result = runner.invoke(main, ["show", "--org", "nonexistentorg"])
             assert result.exit_code != 0
             assert "Organization not found" in result.output
 
     def test_user_and_org_mutually_exclusive(self):
         """--user and --org cannot be used together."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--user", "testuser", "--org", "testorg"])
+        result = runner.invoke(main, ["show", "--user", "testuser", "--org", "testorg"])
         assert result.exit_code != 0
         assert "Cannot specify both" in result.output
 
@@ -273,6 +273,7 @@ class TestCLIExport:
             result = runner.invoke(
                 main,
                 [
+                    "show",
                     "--user",
                     "testuser",
                     "--output",
@@ -316,6 +317,7 @@ class TestCLIExport:
             result = runner.invoke(
                 main,
                 [
+                    "show",
                     "--user",
                     "testuser",
                     "--output",
