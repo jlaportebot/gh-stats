@@ -292,3 +292,31 @@ def compute_streaks(contributions: dict[str, int]) -> dict[str, int]:
         check_date -= timedelta(days=1)
 
     return {"current_streak": current_streak, "longest_streak": longest_streak}
+
+
+# ---------------------------------------------------------------------------
+# Comparison computation
+# ---------------------------------------------------------------------------
+
+
+def compute_comparison_summary(
+    activities_a: list[dict[str, Any]], activities_b: list[dict[str, Any]]
+) -> dict[str, dict[str, int]]:
+    """Compute side-by-side activity summaries for two targets.
+
+    Args:
+        activities_a: Activities for target A.
+        activities_b: Activities for target B.
+
+    Returns:
+        Dict with keys "a" and "b", each mapping activity type to count.
+    """
+    counter_a: Counter[str] = Counter()
+    counter_b: Counter[str] = Counter()
+
+    for activity in activities_a:
+        counter_a[activity["type"]] += 1
+    for activity in activities_b:
+        counter_b[activity["type"]] += 1
+
+    return {"a": dict(counter_a), "b": dict(counter_b)}

@@ -31,7 +31,7 @@ _MONTH_LABELS = [
 ]
 
 # Block characters for contribution intensity
-_HEATMAP_BLOCKS = ["░", "▒", "▓", "█"]
+_HEATMAP_BLOCKS = ["░", "▒", "▓", "█", "█"]
 
 # Color gradient for contributions (green scale)
 _HEATMAP_COLORS = [
@@ -172,7 +172,7 @@ def render_heatmap(contributions: dict[str, int], year: int | None = None) -> Pa
 
     # Legend
     text.append("\n  Less ", style="dim")
-    for block, color in zip(_HEATMAP_BLOCKS, _HEATMAP_COLORS[1:], strict=True):
+    for block, color in zip(_HEATMAP_BLOCKS[1:], _HEATMAP_COLORS[1:], strict=True):
         text.append(block, style=color)
     text.append(" More", style="dim")
 
@@ -702,3 +702,201 @@ def _render_html(data: dict[str, Any]) -> str:
     html += """</body>
 </html>"""
     return html
+
+
+# ---------------------------------------------------------------------------
+# Comparison mode rendering
+# ---------------------------------------------------------------------------
+
+
+def render_comparison_profile_cards(
+    stats_a: dict[str, Any],
+    stats_b: dict[str, Any],
+    contributions_a: int,
+    contributions_b: int,
+    target_type_a: str,
+    target_type_b: str,
+) -> Panel:
+    """Render two profile cards side by side for comparison.
+
+    Returns:
+        Rich Panel with two profile cards.
+    """
+    from rich.columns import Columns
+
+    card_a = render_profile_card(stats_a, contributions_a)
+    card_b = render_profile_card(stats_b, contributions_b)
+
+    # Update titles to indicate comparison
+    card_a.title = f"👤 Profile A ({target_type_a})"
+    card_b.title = f"👤 Profile B ({target_type_b})"
+
+    return Panel(
+        Columns([card_a, card_b], equal=True, expand=True),
+        title="👥 Profile Comparison",
+        border_style="bright_blue",
+        padding=(1, 2),
+    )
+
+
+def render_comparison_heatmap(
+    contributions_a: dict[str, int],
+    contributions_b: dict[str, int],
+    year: int | None,
+    target_type_a: str,
+    target_type_b: str,
+) -> Panel:
+    """Render two contribution heatmaps side by side for comparison.
+
+    Returns:
+        Rich Panel with two heatmaps.
+    """
+    from rich.columns import Columns
+
+    heatmap_a = render_heatmap(contributions_a, year)
+    heatmap_b = render_heatmap(contributions_b, year)
+
+    heatmap_a.title = f"📊 Heatmap A ({target_type_a})"
+    heatmap_b.title = f"📊 Heatmap B ({target_type_b})"
+
+    return Panel(
+        Columns([heatmap_a, heatmap_b], equal=True, expand=True),
+        title="📊 Contribution Heatmap Comparison",
+        border_style="green",
+        padding=(1, 2),
+    )
+
+
+def render_comparison_language_charts(
+    lang_stats_a: dict[str, int],
+    lang_stats_b: dict[str, int],
+    target_type_a: str,
+    target_type_b: str,
+) -> Panel:
+    """Render two language charts side by side for comparison.
+
+    Returns:
+        Rich Panel with two language charts.
+    """
+    from rich.columns import Columns
+
+    chart_a = render_language_chart(lang_stats_a)
+    chart_b = render_language_chart(lang_stats_b)
+
+    chart_a.title = f"🔤 Languages A ({target_type_a})"
+    chart_b.title = f"🔤 Languages B ({target_type_b})"
+
+    return Panel(
+        Columns([chart_a, chart_b], equal=True, expand=True),
+        title="🔤 Language Distribution Comparison",
+        border_style="magenta",
+        padding=(1, 2),
+    )
+
+
+def render_comparison_repo_tables(
+    repo_stats_a: list[dict[str, Any]],
+    repo_stats_b: list[dict[str, Any]],
+    target_type_a: str,
+    target_type_b: str,
+    limit: int = 10,
+) -> Panel:
+    """Render two repository tables side by side for comparison.
+
+    Returns:
+        Rich Panel with two repo tables.
+    """
+    from rich.columns import Columns
+
+    table_a = render_repo_table(repo_stats_a, limit)
+    table_b = render_repo_table(repo_stats_b, limit)
+
+    table_a.title = f"🏆 Top Repos A ({target_type_a})"
+    table_b.title = f"🏆 Top Repos B ({target_type_b})"
+
+    return Panel(
+        Columns([table_a, table_b], equal=True, expand=True),
+        title="🏆 Repository Comparison",
+        border_style="bright_cyan",
+        padding=(1, 2),
+    )
+
+
+def render_comparison_activity_timelines(
+    activities_a: list[dict[str, Any]],
+    activities_b: list[dict[str, Any]],
+    limit: int = 20,
+) -> Panel:
+    """Render two activity timelines side by side for comparison.
+
+    Returns:
+        Rich Panel with two activity timelines.
+    """
+    from rich.columns import Columns
+
+    timeline_a = render_activity_timeline(activities_a, limit)
+    timeline_b = render_activity_timeline(activities_b, limit)
+
+    timeline_a.title = "🕐 Activity A"
+    timeline_b.title = "🕐 Activity B"
+
+    return Panel(
+        Columns([timeline_a, timeline_b], equal=True, expand=True),
+        title="🕐 Activity Timeline Comparison",
+        border_style="yellow",
+        padding=(1, 2),
+    )
+
+
+def render_comparison_streaks(
+    streaks_a: dict[str, int],
+    streaks_b: dict[str, int],
+    target_type_a: str,
+    target_type_b: str,
+) -> Panel:
+    """Render two streak panels side by side for comparison.
+
+    Returns:
+        Rich Panel with two streak panels.
+    """
+    from rich.columns import Columns
+
+    streak_a = render_streaks(streaks_a)
+    streak_b = render_streaks(streaks_b)
+
+    streak_a.title = f"🔥 Streaks A ({target_type_a})"
+    streak_b.title = f"🔥 Streaks B ({target_type_b})"
+
+    return Panel(
+        Columns([streak_a, streak_b], equal=True, expand=True),
+        title="🔥 Contribution Streaks Comparison",
+        border_style="bright_red",
+        padding=(1, 2),
+    )
+
+
+def render_comparison_summary_bars(
+    summary_a: dict[str, int],
+    summary_b: dict[str, int],
+    target_type_a: str,
+    target_type_b: str,
+) -> Panel:
+    """Render two summary bars side by side for comparison.
+
+    Returns:
+        Rich Panel with two summary bars.
+    """
+    from rich.columns import Columns
+
+    bar_a = render_summary_bar(summary_a)
+    bar_b = render_summary_bar(summary_b)
+
+    bar_a.title = f"📈 Summary A ({target_type_a})"
+    bar_b.title = f"📈 Summary B ({target_type_b})"
+
+    return Panel(
+        Columns([bar_a, bar_b], equal=True, expand=True),
+        title="📈 Activity Summary Comparison",
+        border_style="white",
+        padding=(1, 2),
+    )
