@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from . import __version__
 from .activity import (
@@ -66,8 +69,12 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 
-def common_options(func):
-    """Decorator to add common options to subcommands."""
+def common_options(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator to add common options to subcommands.
+
+    Returns:
+        The decorated command with common options added.
+    """
     func = click.option(
         "-y",
         "--year",
@@ -128,8 +135,12 @@ def common_options(func):
     )(func)
 
 
-def target_options(func):
-    """Decorator to add target (user/org) options."""
+def target_options(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator to add target (user/org) options.
+
+    Returns:
+        The decorated command with target options added.
+    """
     func = click.option(
         "-u",
         "--user",
@@ -156,8 +167,8 @@ def fetch_target_data(
     target_name: str | None,
     target_type: str,
     year: int | None,
-    progress,
-    task,
+    progress: Progress,
+    task: TaskID,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -166,7 +177,11 @@ def fetch_target_data(
     list[dict[str, Any]] | None,
     dict[str, Any] | None,
 ]:
-    """Fetch all data for a single target (user or org)."""
+    """Fetch all data for a single target (user or org).
+
+    Returns:
+        Tuple of (stats, contributions, activities, repos, members, user_data).
+    """
     # Resolve username/orgname
     if target_name is None:
         user_data = get_authenticated_user(token)
@@ -226,7 +241,11 @@ def compute_all_stats(
     activities: list[dict[str, Any]],
     repos: list[dict[str, Any]],
 ) -> tuple[dict[str, int], list[dict[str, Any]], dict[str, int], dict[str, int]]:
-    """Compute derived statistics from raw data."""
+    """Compute derived statistics from raw data.
+
+    Returns:
+        Tuple of (lang_stats, repo_stats, activity_summary, streaks).
+    """
     lang_stats = compute_language_stats(repos)
     repo_stats = compute_repo_stats(repos)
     activity_summary = compute_activity_summary(activities)
@@ -464,8 +483,8 @@ def compare(
     no_heatmap: bool,
     no_streaks: bool,
     no_activity: bool,
-    output_path: Path | None,
-    export_format: str,
+    _output_path: Path | None,
+    _export_format: str,
 ) -> None:
     """Compare two users or two organizations side by side.
 
@@ -484,7 +503,9 @@ def compare(
         target_type = "org"
         target_a, target_b = org_a, org_b
     else:
-        console.print("[bold red]Error:[/bold red] Must specify either two users or two organizations")
+        console.print(
+            "[bold red]Error:[/bold red] Must specify either two users or two organizations"
+        )
         console.print("  Use --user-a/--user-b for users, or --org-a/--org-b for organizations")
         raise SystemExit(1)
 
@@ -500,27 +521,37 @@ def compare(
             token = get_token()
 
             # Fetch data for target A
-            progress.update(task, description=f"Fetching {target_type} A: [bold]{target_a}[/bold]...")
+            progress.update(
+                task, description=f"Fetching {target_type} A: [bold]{target_a}[/bold]..."
+            )
             stats_a, contrib_a, activities_a, repos_a, members_a, _ = fetch_target_data(
                 token, target_a, target_type, year, progress, task
             )
             total_a = sum(contrib_a.values())
-            lang_a, repo_a, summary_a, streaks_a = compute_all_stats(contrib_a, activities_a, repos_a)
+            lang_a, repo_a, summary_a, streaks_a = compute_all_stats(
+                contrib_a, activities_a, repos_a
+            )
 
             # Fetch data for target B
-            progress.update(task, description=f"Fetching {target_type} B: [bold]{target_b}[/bold]...")
+            progress.update(
+                task, description=f"Fetching {target_type} B: [bold]{target_b}[/bold]..."
+            )
             stats_b, contrib_b, activities_b, repos_b, members_b, _ = fetch_target_data(
                 token, target_b, target_type, year, progress, task
             )
             total_b = sum(contrib_b.values())
-            lang_b, repo_b, summary_b, streaks_b = compute_all_stats(contrib_b, activities_b, repos_b)
+            lang_b, repo_b, summary_b, streaks_b = compute_all_stats(
+                contrib_b, activities_b, repos_b
+            )
 
             # Compute comparison summary
             compute_comparison_summary(activities_a, activities_b)
 
         # ── Render comparison dashboard ────────────────────────────────
         console.print()
-        console.print(f"[bold]📊 gh-stats — Comparing {target_type} {target_a} vs {target_b}[/bold]")
+        console.print(
+            f"[bold]📊 gh-stats — Comparing {target_type} {target_a} vs {target_b}[/bold]"
+        )
         console.print()
 
         # Profile comparison
@@ -540,9 +571,7 @@ def compare(
 
         # Streaks comparison
         if not no_streaks:
-            console.print(
-                render_comparison_streaks(streaks_a, streaks_b, target_type, target_type)
-            )
+            console.print(render_comparison_streaks(streaks_a, streaks_b, target_type, target_type))
             console.print()
 
         # Summary comparison
@@ -553,22 +582,16 @@ def compare(
 
         # Activity timeline comparison
         if not no_activity:
-            console.print(
-                render_comparison_activity_timelines(activities_a, activities_b, limit)
-            )
+            console.print(render_comparison_activity_timelines(activities_a, activities_b, limit))
             console.print()
 
         # Language comparison
-        console.print(
-            render_comparison_language_charts(lang_a, lang_b, target_type, target_type)
-        )
+        console.print(render_comparison_language_charts(lang_a, lang_b, target_type, target_type))
         console.print()
 
         # Repo comparison
         if show_repos:
-            console.print(
-                render_comparison_repo_tables(repo_a, repo_b, target_type, target_type)
-            )
+            console.print(render_comparison_repo_tables(repo_a, repo_b, target_type, target_type))
             console.print()
 
         # Members comparison (org only)
@@ -599,7 +622,11 @@ def render_comparison_members_tables(
     target_type_b: str,
     limit: int = 20,
 ) -> Panel:
-    """Render two member tables side by side for comparison."""
+    """Render two member tables side by side for comparison.
+
+    Returns:
+        Rich Panel with two member tables.
+    """
     from rich.columns import Columns
 
     table_a = render_members_table(members_a, limit)

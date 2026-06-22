@@ -49,7 +49,9 @@ class TestComputeComparisonSummary:
 
     def test_handles_one_empty_side(self):
         """Should handle one side having no activities."""
-        activities_a = [{"type": "push", "repo": "a/repo1", "time": "2024-01-01", "detail": "pushed"}]
+        activities_a = [
+            {"type": "push", "repo": "a/repo1", "time": "2024-01-01", "detail": "pushed"}
+        ]
         result = compute_comparison_summary(activities_a, [])
         assert result["a"]["push"] == 1
         assert result["b"] == {}
@@ -86,6 +88,7 @@ class TestRenderComparisonProfileCards:
         assert panel is not None
         # Render the panel to check content
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -101,6 +104,7 @@ class TestRenderComparisonProfileCards:
         panel = render_comparison_profile_cards(stats_a, stats_b, 1000, 500, "org", "org")
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -118,6 +122,7 @@ class TestRenderComparisonHeatmap:
         panel = render_comparison_heatmap(contrib_a, contrib_b, 2024, "user", "user")
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -139,6 +144,7 @@ class TestRenderComparisonLanguageCharts:
         panel = render_comparison_language_charts(lang_a, lang_b, "user", "user")
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -151,11 +157,22 @@ class TestRenderComparisonRepoTables:
 
     def test_renders_two_repo_tables_side_by_side(self):
         """Should render two repository tables side by side."""
-        repos_a = [{"name": "a/repo1", "stars": 100, "forks": 10, "language": "Python", "description": "Desc"}]
-        repos_b = [{"name": "b/repo1", "stars": 50, "forks": 5, "language": "Go", "description": "Desc"}]
+        repos_a = [
+            {
+                "name": "a/repo1",
+                "stars": 100,
+                "forks": 10,
+                "language": "Python",
+                "description": "Desc",
+            }
+        ]
+        repos_b = [
+            {"name": "b/repo1", "stars": 50, "forks": 5, "language": "Go", "description": "Desc"}
+        ]
         panel = render_comparison_repo_tables(repos_a, repos_b, "user", "user")
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -168,11 +185,16 @@ class TestRenderComparisonActivityTimelines:
 
     def test_renders_two_timelines_side_by_side(self):
         """Should render two activity timelines side by side."""
-        activities_a = [{"type": "push", "repo": "a/repo1", "time": "2024-01-01T10:00:00Z", "detail": "pushed"}]
-        activities_b = [{"type": "pr", "repo": "b/repo1", "time": "2024-01-01T11:00:00Z", "detail": "opened PR"}]
+        activities_a = [
+            {"type": "push", "repo": "a/repo1", "time": "2024-01-01T10:00:00Z", "detail": "pushed"}
+        ]
+        activities_b = [
+            {"type": "pr", "repo": "b/repo1", "time": "2024-01-01T11:00:00Z", "detail": "opened PR"}
+        ]
         panel = render_comparison_activity_timelines(activities_a, activities_b, limit=10)
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -191,6 +213,7 @@ class TestRenderComparisonStreaks:
         panel = render_comparison_streaks(streaks_a, streaks_b, "user", "user")
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
@@ -208,6 +231,7 @@ class TestRenderComparisonSummaryBars:
         panel = render_comparison_summary_bars(summary_a, summary_b, "user", "user")
         assert panel is not None
         from rich.console import Console
+
         console = Console(record=True)
         console.print(panel)
         output = console.export_text()
