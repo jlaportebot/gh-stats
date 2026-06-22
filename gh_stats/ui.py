@@ -900,3 +900,205 @@ def render_comparison_summary_bars(
         border_style="white",
         padding=(1, 2),
     )
+
+
+def render_comparison_patterns(
+    patterns_a: dict[str, Any],
+    patterns_b: dict[str, Any],
+    label_a: str,
+    label_b: str,
+) -> Panel:
+    """Render side-by-side contribution patterns comparison.
+
+    Args:
+        patterns_a: Pattern analysis dict for target A.
+        patterns_b: Pattern analysis dict for target B.
+        label_a: Display label for target A.
+        label_b: Display label for target B.
+
+    Returns:
+        Rich Panel with patterns comparison.
+    """
+    from rich.columns import Columns
+
+    text_a = _format_pattern_text(patterns_a, label_a)
+    text_b = _format_pattern_text(patterns_b, label_b)
+
+    panel_a = Panel(
+        text_a,
+        title=f"📅 Patterns A ({label_a})",
+        border_style="magenta",
+        padding=(1, 2),
+    )
+    panel_b = Panel(
+        text_b,
+        title=f"📅 Patterns B ({label_b})",
+        border_style="magenta",
+        padding=(1, 2),
+    )
+
+    return Panel(
+        Columns([panel_a, panel_b], equal=True, expand=True),
+        title="📅 Contribution Patterns Comparison",
+        border_style="bright_magenta",
+        padding=(1, 2),
+    )
+
+
+def _format_pattern_text(patterns: dict[str, Any], _label: str) -> Text:
+    """Format contribution patterns dict into Rich Text.
+
+    Args:
+        patterns: Pattern analysis dict.
+        _label: Target label for display.
+
+    Returns:
+        Rich Text with formatted patterns.
+    """
+    text = Text()
+
+    # Weekday breakdown
+    text.append(" 📅 By Weekday\n", style="bold bright_magenta")
+    by_weekday = patterns.get("by_weekday", {})
+    if by_weekday:
+        max_wd = max(by_weekday.values())
+        for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+            count = by_weekday.get(day, 0)
+            bar_len = int(count / max_wd * 15) if max_wd > 0 else 0
+            text.append(f"   {day} ", style="bold")
+            text.append("█" * bar_len, style="bright_green")
+            text.append(f" {count}\n", style="dim")
+    else:
+        text.append("   No data\n", style="dim")
+
+    text.append("\n")
+
+    # Monthly breakdown
+    text.append(" 📆 By Month\n", style="bold bright_cyan")
+    by_month = patterns.get("by_month", {})
+    if by_month:
+        month_order = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ]
+        max_m = max(by_month.values())
+        for month in month_order:
+            count = by_month.get(month, 0)
+            if count > 0:
+                bar_len = int(count / max_m * 15) if max_m > 0 else 0
+                text.append(f"   {month} ", style="bold")
+                text.append("█" * bar_len, style="bright_blue")
+                text.append(f" {count}\n", style="dim")
+    else:
+        text.append("   No data\n", style="dim")
+
+    text.append("\n")
+
+    # Key stats
+    text.append(" 📊 Key Stats\n", style="bold bright_yellow")
+    most_active = patterns.get("most_active_day", "—")
+    least_active = patterns.get("least_active_day", "—")
+    peak_month = patterns.get("peak_month", "—")
+    consistency = patterns.get("consistency_pct", 0.0)
+    avg_daily = patterns.get("avg_per_active_day", 0.0)
+    max_daily = patterns.get("max_daily", 0)
+    active_days = patterns.get("active_days", 0)
+    total_days = patterns.get("total_days", 0)
+
+    text.append("   Most active day: ", style="dim")
+    text.append(f"{most_active}\n", style="bold white")
+    text.append("   Least active day: ", style="dim")
+    text.append(f"{least_active}\n", style="bold white")
+    text.append("   Peak month: ", style="dim")
+    text.append(f"{peak_month}\n", style="bold white")
+    text.append("   Consistency: ", style="dim")
+    text.append(f"{consistency}%\n", style="bold green")
+    text.append("   Avg/day (active): ", style="dim")
+    text.append(f"{avg_daily}\n", style="bold white")
+    text.append("   Max daily: ", style="dim")
+    text.append(f"{max_daily}\n", style="bold white")
+    text.append("   Active days: ", style="dim")
+    text.append(f"{active_days}/{total_days}\n", style="bold white")
+
+    return text
+
+
+def render_growth_metrics(
+    growth: dict[str, Any],
+    label_a: str,
+    label_b: str,
+) -> Panel:
+    """Render growth metrics comparison panel.
+
+    Args:
+        growth: Growth metrics dict from compute_growth_metrics.
+        label_a: Display label for period A.
+        label_b: Display label for period B.
+
+    Returns:
+        Rich Panel with growth metrics visualization.
+    """
+    text = Text()
+
+    verdict = growth.get("verdict", "➡️ Steady activity")
+    total_growth = growth.get("total_growth_pct", 0.0)
+    active_growth = growth.get("active_days_growth_pct", 0.0)
+    consistency_change = growth.get("consistency_change_pct", 0.0)
+    avg_daily_change = growth.get("avg_daily_change_pct", 0.0)
+    peak_a = growth.get("peak_month_a", "—")
+    peak_b = growth.get("peak_month_b", "—")
+
+    # Verdict
+    text.append(f" {verdict}\n\n", style="bold white")
+
+    # Growth arrows helper
+    def _arrow(val: float) -> tuple[str, str]:
+        if val > 10:
+            return "↑", "bold green"
+        if val < -10:
+            return "↓", "bold red"
+        return "→", "dim"
+
+    # Total contributions growth
+    arrow, color = _arrow(total_growth)
+    text.append(" Total contributions:  ", style="dim")
+    text.append(f"{arrow} {total_growth:+.1f}%\n", style=color)
+
+    # Active days growth
+    arrow, color = _arrow(active_growth)
+    text.append(" Active days:          ", style="dim")
+    text.append(f"{arrow} {active_growth:+.1f}%\n", style=color)
+
+    # Consistency change
+    arrow, color = _arrow(consistency_change)
+    text.append(" Consistency:          ", style="dim")
+    text.append(f"{arrow} {consistency_change:+.1f}pp\n", style=color)
+
+    # Avg daily change
+    arrow, color = _arrow(avg_daily_change)
+    text.append(" Avg per active day:  ", style="dim")
+    text.append(f"{arrow} {avg_daily_change:+.1f}%\n", style=color)
+
+    # Peak months
+    text.append("\n")
+    text.append(f" Peak month A ({label_a}): ", style="dim")
+    text.append(f"{peak_a}\n", style="bold white")
+    text.append(f" Peak month B ({label_b}): ", style="dim")
+    text.append(f"{peak_b}\n", style="bold white")
+
+    return Panel(
+        text,
+        title="📊 Growth Metrics",
+        border_style="bright_green",
+        padding=(1, 2),
+    )

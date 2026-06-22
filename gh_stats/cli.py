@@ -23,6 +23,8 @@ from .activity import (
     categorize_events,
     compute_activity_summary,
     compute_comparison_summary,
+    compute_contribution_patterns,
+    compute_growth_metrics,
     compute_language_stats,
     compute_repo_stats,
     compute_streaks,
@@ -42,16 +44,19 @@ from .api import (
     get_user_repos,
     get_user_stats,
 )
+from .html_export import _render_comparison_html
 from .ui import (
     _render_html,
     render_activity_timeline,
     render_comparison_activity_timelines,
     render_comparison_heatmap,
     render_comparison_language_charts,
+    render_comparison_patterns,
     render_comparison_profile_cards,
     render_comparison_repo_tables,
     render_comparison_streaks,
     render_comparison_summary_bars,
+    render_growth_metrics,
     render_heatmap,
     render_language_chart,
     render_members_table,
@@ -471,6 +476,20 @@ def show(
     default=None,
     help="Second GitHub organization to compare",
 )
+@click.option(
+    "--year-a",
+    "year_a",
+    default=None,
+    type=int,
+    help="Year for first target (enables time-period comparison for same user/org)",
+)
+@click.option(
+    "--year-b",
+    "year_b",
+    default=None,
+    type=int,
+    help="Year for second target (enables time-period comparison for same user/org)",
+)
 @common_options
 def compare(
     user_a: str | None,
@@ -478,30 +497,69 @@ def compare(
     org_a: str | None,
     org_b: str | None,
     year: int | None,
+    year_a: int | None,
+    year_b: int | None,
     limit: int,
     show_repos: bool,
     no_heatmap: bool,
     no_streaks: bool,
     no_activity: bool,
-    _output_path: Path | None,
-    _export_format: str,
+    output_path: Path | None,
+    export_format: str,
 ) -> None:
     """Compare two users or two organizations side by side.
 
     Provide either two users (--user-a/--user-b) or two organizations
     (--org-a/--org-b). Mixing user and org is not supported.
+
+    For time-period comparison, provide a single user or org with different
+    years: e.g. ``--user-a octocat --year-a 2023 --year-b 2024``.
     """
     # Validate arguments
     if (user_a or user_b) and (org_a or org_b):
         console.print("[bold red]Error:[/bold red] Cannot mix --user-* and --org-* options")
         raise SystemExit(1)
 
-    if user_a and user_b:
+    # Time-period comparison: same target, different years
+    time_period_mode = (year_a is not None or year_b is not None) and (
+        user_b is None and org_b is None
+    )
+
+    if time_period_mode:
+        target_name = user_a or org_a
+        if not target_name:
+            msg = "Must specify --user-a or --org-a for time-period comparison"
+            console.print(f"[bold red]Error:[/bold red] {msg}")
+            raise SystemExit(1)
+        target_type = "org" if org_a else "user"
+        target_a = target_name
+        target_b = target_name
+        effective_year_a = year_a or year
+        effective_year_b = year_b or year
+        if effective_year_a is None or effective_year_b is None:
+            msg = "Must specify --year-a and --year-b for time-period comparison"
+            console.print(f"[bold red]Error:[/bold red] {msg}")
+            raise SystemExit(1)
+        if effective_year_a == effective_year_b:
+            msg = "--year-a and --year-b must be different years"
+            console.print(f"[bold red]Error:[/bold red] {msg}")
+            raise SystemExit(1)
+        compare_label_a = f"{target_name} ({effective_year_a})"
+        compare_label_b = f"{target_name} ({effective_year_b})"
+    elif user_a and user_b:
         target_type = "user"
         target_a, target_b = user_a, user_b
+        effective_year_a = year
+        effective_year_b = year
+        compare_label_a = target_a
+        compare_label_b = target_b
     elif org_a and org_b:
         target_type = "org"
         target_a, target_b = org_a, org_b
+        effective_year_a = year
+        effective_year_b = year
+        compare_label_a = target_a
+        compare_label_b = target_b
     else:
         console.print(
             "[bold red]Error:[/bold red] Must specify either two users or two organizations"
@@ -522,10 +580,10 @@ def compare(
 
             # Fetch data for target A
             progress.update(
-                task, description=f"Fetching {target_type} A: [bold]{target_a}[/bold]..."
+                task, description=f"Fetching {target_type} A: [bold]{compare_label_a}[/bold]..."
             )
             stats_a, contrib_a, activities_a, repos_a, members_a, _ = fetch_target_data(
-                token, target_a, target_type, year, progress, task
+                token, target_a, target_type, effective_year_a, progress, task
             )
             total_a = sum(contrib_a.values())
             lang_a, repo_a, summary_a, streaks_a = compute_all_stats(
@@ -534,10 +592,10 @@ def compare(
 
             # Fetch data for target B
             progress.update(
-                task, description=f"Fetching {target_type} B: [bold]{target_b}[/bold]..."
+                task, description=f"Fetching {target_type} B: [bold]{compare_label_b}[/bold]..."
             )
             stats_b, contrib_b, activities_b, repos_b, members_b, _ = fetch_target_data(
-                token, target_b, target_type, year, progress, task
+                token, target_b, target_type, effective_year_b, progress, task
             )
             total_b = sum(contrib_b.values())
             lang_b, repo_b, summary_b, streaks_b = compute_all_stats(
@@ -545,19 +603,75 @@ def compare(
             )
 
             # Compute comparison summary
-            compute_comparison_summary(activities_a, activities_b)
+            comparison = compute_comparison_summary(activities_a, activities_b)
+
+            # Compute contribution patterns
+
+            patterns_a = compute_contribution_patterns(contrib_a)
+            patterns_b = compute_contribution_patterns(contrib_b)
+
+            # Compute growth rates
+
+            growth = compute_growth_metrics(contrib_a, contrib_b)
+
+        # ── Prepare export data ──────────────────────────────────────
+        export_data = {
+            "comparison_mode": "time_period" if time_period_mode else "side_by_side",
+            "target_type": target_type,
+            "target_a": compare_label_a,
+            "target_b": compare_label_b,
+            "year_a": effective_year_a,
+            "year_b": effective_year_b,
+            "stats_a": stats_a,
+            "stats_b": stats_b,
+            "total_contributions_a": total_a,
+            "total_contributions_b": total_b,
+            "contributions_a": contrib_a,
+            "contributions_b": contrib_b,
+            "activities_a": activities_a[:limit],
+            "activities_b": activities_b[:limit],
+            "lang_stats_a": lang_a,
+            "lang_stats_b": lang_b,
+            "repo_stats_a": repo_a[:10],
+            "repo_stats_b": repo_b[:10],
+            "activity_summary_a": summary_a,
+            "activity_summary_b": summary_b,
+            "streaks_a": streaks_a,
+            "streaks_b": streaks_b,
+            "comparison_summary": comparison,
+            "patterns_a": patterns_a,
+            "patterns_b": patterns_b,
+            "growth_metrics": growth,
+        }
+
+        # ── Export if requested ──────────────────────────────────────
+        if output_path:
+            if export_format == "json":
+                output_path.write_text(json.dumps(export_data, indent=2, default=str))
+            elif export_format == "html":
+                html_content = _render_comparison_html(export_data)
+                output_path.write_text(html_content)
+            console.print(f"[green]Comparison exported to {output_path}[/green]")
+            if not (no_heatmap and no_streaks and no_activity and not show_repos):
+                console.print()
 
         # ── Render comparison dashboard ────────────────────────────────
         console.print()
-        console.print(
-            f"[bold]📊 gh-stats — Comparing {target_type} {target_a} vs {target_b}[/bold]"
-        )
+        if time_period_mode:
+            console.print(
+                f"[bold]📊 gh-stats — Comparing {target_type} {target_name}: "
+                f"{effective_year_a} vs {effective_year_b}[/bold]"
+            )
+        else:
+            console.print(
+                f"[bold]📊 gh-stats — Comparing {target_type} {target_a} vs {target_b}[/bold]"
+            )
         console.print()
 
         # Profile comparison
         console.print(
             render_comparison_profile_cards(
-                stats_a, stats_b, total_a, total_b, target_type, target_type
+                stats_a, stats_b, total_a, total_b, compare_label_a, compare_label_b
             )
         )
         console.print()
@@ -565,18 +679,22 @@ def compare(
         # Heatmap comparison
         if not no_heatmap:
             console.print(
-                render_comparison_heatmap(contrib_a, contrib_b, year, target_type, target_type)
+                render_comparison_heatmap(
+                    contrib_a, contrib_b, effective_year_a, compare_label_a, compare_label_b
+                )
             )
             console.print()
 
         # Streaks comparison
         if not no_streaks:
-            console.print(render_comparison_streaks(streaks_a, streaks_b, target_type, target_type))
+            console.print(
+                render_comparison_streaks(streaks_a, streaks_b, compare_label_a, compare_label_b)
+            )
             console.print()
 
         # Summary comparison
         console.print(
-            render_comparison_summary_bars(summary_a, summary_b, target_type, target_type)
+            render_comparison_summary_bars(summary_a, summary_b, compare_label_a, compare_label_b)
         )
         console.print()
 
@@ -586,20 +704,36 @@ def compare(
             console.print()
 
         # Language comparison
-        console.print(render_comparison_language_charts(lang_a, lang_b, target_type, target_type))
+        console.print(
+            render_comparison_language_charts(lang_a, lang_b, compare_label_a, compare_label_b)
+        )
         console.print()
 
-        # Repo comparison
-        if show_repos:
-            console.print(render_comparison_repo_tables(repo_a, repo_b, target_type, target_type))
-            console.print()
-
-        # Members comparison (org only)
-        if target_type == "org" and members_a and members_b:
+        # Repo comparison (only if not time-period or both are different targets)
+        if show_repos and not time_period_mode:
             console.print(
-                render_comparison_members_tables(members_a, members_b, target_type, target_type)
+                render_comparison_repo_tables(repo_a, repo_b, compare_label_a, compare_label_b)
             )
             console.print()
+
+        # Members comparison (org only, not time-period)
+        if target_type == "org" and members_a and members_b and not time_period_mode:
+            console.print(
+                render_comparison_members_tables(
+                    members_a, members_b, compare_label_a, compare_label_b
+                )
+            )
+            console.print()
+
+        # Contribution patterns comparison
+        console.print(
+            render_comparison_patterns(patterns_a, patterns_b, compare_label_a, compare_label_b)
+        )
+        console.print()
+
+        # Growth metrics
+        console.print(render_growth_metrics(growth, compare_label_a, compare_label_b))
+        console.print()
 
     except AuthError as e:
         console.print(f"[bold red]Authentication error:[/bold red] {e}")

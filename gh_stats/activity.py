@@ -320,3 +320,179 @@ def compute_comparison_summary(
         counter_b[activity["type"]] += 1
 
     return {"a": dict(counter_a), "b": dict(counter_b)}
+
+
+# ---------------------------------------------------------------------------
+# Contribution pattern analysis
+# ---------------------------------------------------------------------------
+
+_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def compute_contribution_patterns(
+    contributions: dict[str, int],
+) -> dict[str, Any]:
+    """Analyze contribution patterns by day-of-week and monthly distribution.
+
+    Args:
+        contributions: Dict mapping date strings (YYYY-MM-DD) to contribution counts.
+
+    Returns:
+        Dict with keys:
+            - "by_weekday": { weekday_name: total_count }
+            - "most_active_day": weekday name with highest total
+            - "least_active_day": weekday name with lowest total
+            - "by_month": { month_number: total_count }
+            - "peak_month": month with highest total
+            - "active_days": number of days with at least 1 contribution
+            - "total_days": total number of days in contributions dict
+            - "consistency_pct": percentage of days with contributions
+            - "avg_per_active_day": average contributions on active days
+            - "max_daily": maximum contributions on a single day
+    """
+    if not contributions:
+        return {
+            "by_weekday": {},
+            "most_active_day": "",
+            "least_active_day": "",
+            "by_month": {},
+            "peak_month": "",
+            "active_days": 0,
+            "total_days": 0,
+            "consistency_pct": 0.0,
+            "avg_per_active_day": 0.0,
+            "max_daily": 0,
+        }
+
+    weekday_counts: dict[int, int] = {}
+    month_counts: dict[int, int] = {}
+    active_days = 0
+    total_contrib = 0
+    max_daily = 0
+
+    for date_str, count in contributions.items():
+        try:
+            dt = datetime.fromisoformat(date_str)
+        except (ValueError, AttributeError):
+            continue
+
+        # weekday(): 0=Mon, 6=Sun — matches _DAY_NAMES
+        wd = dt.weekday()
+        weekday_counts[wd] = weekday_counts.get(wd, 0) + count
+
+        month = dt.month
+        month_counts[month] = month_counts.get(month, 0) + count
+
+        if count > 0:
+            active_days += 1
+            total_contrib += count
+        max_daily = max(max_daily, count)
+
+    total_days = len(contributions)
+    consistency_pct = (active_days / total_days * 100) if total_days > 0 else 0.0
+    avg_per_active = (total_contrib / active_days) if active_days > 0 else 0.0
+
+    # Find most/least active days
+    by_weekday = {_DAY_NAMES[wd]: count for wd, count in weekday_counts.items()}
+    most_active = max(by_weekday, key=lambda k: by_weekday[k]) if by_weekday else ""
+    least_active = min(by_weekday, key=lambda k: by_weekday[k]) if by_weekday else ""
+
+    # Format months
+    month_names = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec",
+    }
+    by_month = {month_names.get(m, str(m)): count for m, count in month_counts.items()}
+    peak_month = max(by_month, key=lambda k: by_month[k]) if by_month else ""
+
+    return {
+        "by_weekday": by_weekday,
+        "most_active_day": most_active,
+        "least_active_day": least_active,
+        "by_month": by_month,
+        "peak_month": peak_month,
+        "active_days": active_days,
+        "total_days": total_days,
+        "consistency_pct": round(consistency_pct, 1),
+        "avg_per_active_day": round(avg_per_active, 1),
+        "max_daily": max_daily,
+    }
+
+
+def compute_growth_metrics(
+    contributions_a: dict[str, int],
+    contributions_b: dict[str, int],
+) -> dict[str, Any]:
+    """Compute year-over-year growth metrics for two contribution periods.
+
+    Compares total contributions, active days, peak month, and consistency
+    between two periods (typically different years for the same target).
+
+    Args:
+        contributions_a: Earlier period contributions.
+        contributions_b: Later period contributions.
+
+    Returns:
+        Dict with keys:
+            - "total_growth_pct": percentage change in total contributions
+            - "active_days_growth_pct": percentage change in active days
+            - "consistency_change_pct": percentage point change in consistency
+            - "avg_daily_change_pct": percentage change in avg per active day
+            - "peak_month_a": peak month name for period A
+            - "peak_month_b": peak month name for period B
+            - "verdict": human-readable comparison verdict
+    """
+    patterns_a = compute_contribution_patterns(contributions_a)
+    patterns_b = compute_contribution_patterns(contributions_b)
+
+    total_a = sum(contributions_a.values())
+    total_b = sum(contributions_b.values())
+
+    def _pct_change(old: float, new: float) -> float:
+        """Compute percentage change from old to new, avoiding division by zero.
+
+        Returns:
+            The percentage change as a float, or 0.0 / 100.0 if old is zero.
+        """
+        if old == 0:
+            return 100.0 if new > 0 else 0.0
+        return round((new - old) / old * 100, 1)
+
+    total_growth = _pct_change(total_a, total_b)
+    active_growth = _pct_change(float(patterns_a["active_days"]), float(patterns_b["active_days"]))
+    consistency_change = round(patterns_b["consistency_pct"] - patterns_a["consistency_pct"], 1)
+    avg_daily_change = _pct_change(
+        patterns_a["avg_per_active_day"], patterns_b["avg_per_active_day"]
+    )
+
+    # Determine verdict
+    if total_growth > 50:
+        verdict = "🚀 Significant growth"
+    elif total_growth > 10:
+        verdict = "📈 Moderate growth"
+    elif total_growth > -10:
+        verdict = "➡️ Steady activity"
+    elif total_growth > -30:
+        verdict = "📉 Slight decline"
+    else:
+        verdict = "⬇️ Significant decline"
+
+    return {
+        "total_growth_pct": total_growth,
+        "active_days_growth_pct": active_growth,
+        "consistency_change_pct": consistency_change,
+        "avg_daily_change_pct": avg_daily_change,
+        "peak_month_a": patterns_a["peak_month"],
+        "peak_month_b": patterns_b["peak_month"],
+        "verdict": verdict,
+    }
