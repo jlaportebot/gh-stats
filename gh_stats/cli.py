@@ -39,12 +39,32 @@ from .api import (
     get_org_members,
     get_org_repos,
     get_org_stats,
+    get_pull_request_reviews,
+    get_repo_commits,
+    get_repo_contributors,
+    get_repo_issues,
+    get_repo_pull_requests,
     get_token,
     get_user_events,
     get_user_repos,
     get_user_stats,
 )
 from .html_export import _render_comparison_html
+from .team import (
+    compute_bus_factor,
+    compute_collaboration_matrix,
+    compute_contributor_rankings,
+    compute_repo_health_scores,
+    compute_review_analytics,
+)
+from .team_ui import (
+    render_bus_factor,
+    render_collaboration_heatmap,
+    render_contributor_table,
+    render_repo_health_matrix,
+    render_review_analytics,
+    render_team_summary,
+)
 from .ui import (
     _render_html,
     render_activity_timeline,
@@ -735,6 +755,329 @@ def compare(
         # Growth metrics
         console.print(render_growth_metrics(growth, compare_label_a, compare_label_b))
         console.print()
+
+    except AuthError as e:
+        console.print(f"[bold red]Authentication error:[/bold red] {e}")
+        console.print("\n[yellow]Tips:[/yellow]")
+        console.print("  • Install [bold]gh[/bold] CLI and run [bold]gh auth login[/bold]")
+        console.print("  • Or set [bold]GH_TOKEN[/bold] environment variable")
+        raise SystemExit(1)
+    except ApiError as e:
+        console.print(f"[bold red]API error:[/bold red] {e}")
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Interrupted.[/dim]")
+        raise SystemExit(0)
+
+
+# ---------------------------------------------------------------------------
+# Team Analytics Command
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-o",
+    "--org",
+    "orgname",
+    default=None,
+    help="GitHub organization name (defaults to authenticated user's orgs)",
+)
+@click.option(
+    "--repos",
+    "repo_limit",
+    default=20,
+    type=int,
+    help="Number of repositories to analyze (default: 20)",
+)
+@click.option(
+    "--contributors",
+    "contributor_limit",
+    default=20,
+    type=int,
+    help="Number of top contributors to show (default: 20)",
+)
+@click.option(
+    "--no-health",
+    "no_health",
+    is_flag=True,
+    default=False,
+    help="Skip repository health matrix",
+)
+@click.option(
+    "--no-bus-factor",
+    "no_bus_factor",
+    is_flag=True,
+    default=False,
+    help="Skip bus factor analysis",
+)
+@click.option(
+    "--no-collab",
+    "no_collab",
+    is_flag=True,
+    default=False,
+    help="Skip collaboration network",
+)
+@click.option(
+    "--no-reviews",
+    "no_reviews",
+    is_flag=True,
+    default=False,
+    help="Skip code review analytics",
+)
+@click.option(
+    "--output",
+    "output_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Export team data to JSON file",
+)
+@common_options
+def team(
+    orgname: str | None,
+    year: int | None,
+    repo_limit: int,
+    contributor_limit: int,
+    no_health: bool,
+    no_bus_factor: bool,
+    no_collab: bool,
+    no_reviews: bool,
+    output_path: Path | None,
+    export_format: str,
+) -> None:
+    """Show team/organization analytics dashboard.
+
+    Analyzes repository health, contributor rankings, bus factor,
+    collaboration patterns, and code review metrics for an organization.
+    """
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            # Authenticate
+            task = progress.add_task("Authenticating with GitHub...", total=None)
+            token = get_token()
+
+            # Determine organization
+            if orgname is None:
+                # Try to get user's orgs
+                get_authenticated_user(token)
+                msg = (
+                    "[yellow]No organization specified. "
+                    "Use --org to specify an organization.[/yellow]"
+                )
+                console.print(msg)
+                console.print(
+                    "[dim]Your organizations can be found at https://github.com/orgs[/dim]"
+                )
+                raise SystemExit(1)
+
+            target_name = orgname
+
+            # Fetch org profile
+            progress.update(
+                task, description=f"Fetching organization profile for [bold]{target_name}[/bold]..."
+            )
+            stats = get_org_stats(token, target_name)
+            if not stats:
+                console.print(f"[bold red]Organization not found:[/bold red] {target_name}")
+                raise SystemExit(1)
+
+            # Fetch org repos
+            progress.update(task, description="Loading organization repositories...")
+            repos = get_org_repos(token, target_name, pages=5)
+            repos = repos[:repo_limit] if repo_limit else repos
+
+            # Fetch contributors, commits, PRs, issues for each repo
+            all_contributors: list[dict[str, Any]] = []
+            all_commits: list[dict[str, Any]] = []
+            all_prs: list[dict[str, Any]] = []
+            all_issues: list[dict[str, Any]] = []
+            all_reviews: dict[int, list[dict[str, Any]]] = {}
+
+            repo_commits: dict[str, list[dict[str, Any]]] = {}
+            repo_prs: dict[str, list[dict[str, Any]]] = {}
+            repo_issues: dict[str, list[dict[str, Any]]] = {}
+            repo_contributors: dict[str, list[dict[str, Any]]] = {}
+
+            since_date = None
+            if year:
+                since_date = f"{year}-01-01T00:00:00Z"
+
+            for i, repo in enumerate(repos):
+                repo_name = repo.get("name", "")
+                if not repo_name:
+                    continue
+                full_name = repo.get("full_name", f"{target_name}/{repo_name}")
+
+                progress.update(
+                    task,
+                    description=f"Analyzing repo {i + 1}/{len(repos)}: [bold]{full_name}[/bold]...",
+                )
+
+                # Fetch repo data
+                contributors = get_repo_contributors(token, target_name, repo_name, pages=3)
+                commits = get_repo_commits(token, target_name, repo_name, pages=3, since=since_date)
+                prs = get_repo_pull_requests(token, target_name, repo_name, pages=3)
+                issues = get_repo_issues(token, target_name, repo_name, pages=3)
+
+                # Fetch reviews for each PR
+                reviews: dict[int, list[dict[str, Any]]] = {}
+                for pr in prs:
+                    pr_num = pr.get("number")
+                    if pr_num:
+                        pr_reviews = get_pull_request_reviews(token, target_name, repo_name, pr_num)
+                        reviews[pr_num] = pr_reviews
+                        all_reviews[pr_num] = pr_reviews
+
+                all_contributors.extend(contributors)
+                all_commits.extend(commits)
+                all_prs.extend(prs)
+                all_issues.extend(issues)
+
+                repo_contributors[repo_name] = contributors
+                repo_commits[repo_name] = commits
+                repo_prs[repo_name] = prs
+                repo_issues[repo_name] = issues
+
+            # Compute analytics
+            progress.update(task, description="Computing team analytics...")
+
+            # Contributor rankings
+            contributor_rankings = compute_contributor_rankings(
+                all_contributors,
+                all_commits,
+                all_prs,
+                all_reviews,
+                all_issues,
+                top_n=contributor_limit,
+            )
+
+            # Bus factor
+            bus_factor_data = compute_bus_factor(all_contributors, all_commits, all_prs)
+
+            # Repo health
+            repo_health = compute_repo_health_scores(
+                repos,
+                repo_commits,
+                repo_prs,
+                repo_issues,
+                repo_contributors,
+                top_n=repo_limit,
+            )
+
+            # Collaboration matrix
+            collab_data = compute_collaboration_matrix(all_commits, all_prs, all_reviews)
+
+            # Review analytics
+            review_data = compute_review_analytics(all_prs, all_reviews)
+
+            # Team summary stats
+            active_repos = [
+                r for r in repos if not r.get("archived", False) and not r.get("disabled", False)
+            ]
+            total_repos = len(active_repos)
+            total_contributors = len({
+                c.get("login", "") for c in all_contributors if c.get("login")
+            })
+            cutoff_date = since_date or "1970-01-01T00:00:00Z"
+            total_commits = len([
+                c
+                for c in all_commits
+                if c.get("commit", {}).get("author", {}).get("date", "") >= cutoff_date
+            ])
+            total_prs_count = len(all_prs)
+            total_issues_count = len(all_issues)
+            bus_factor = bus_factor_data.get("bus_factor", 0)
+            avg_health = (
+                sum(r.get("health_score", 0) for r in repo_health) / len(repo_health)
+                if repo_health
+                else 0
+            )
+
+            # Prepare export data
+            export_data = {
+                "target_type": "org",
+                "target_name": target_name,
+                "year": year,
+                "stats": stats,
+                "contributor_rankings": contributor_rankings,
+                "bus_factor": bus_factor_data,
+                "repo_health": repo_health,
+                "collaboration": collab_data,
+                "review_analytics": review_data,
+                "summary": {
+                    "total_repos": total_repos,
+                    "total_contributors": total_contributors,
+                    "total_commits": total_commits,
+                    "total_prs": total_prs_count,
+                    "total_issues": total_issues_count,
+                    "bus_factor": bus_factor,
+                    "avg_health": avg_health,
+                },
+            }
+
+            # Export if requested
+            if output_path:
+                if export_format == "json":
+                    output_path.write_text(json.dumps(export_data, indent=2, default=str))
+                elif export_format == "html":
+                    # HTML export not yet implemented for team view
+                    msg = (
+                        "[yellow]HTML export for team view not yet implemented, "
+                        "exporting JSON[/yellow]"
+                    )
+                    console.print(msg)
+                    output_path.write_text(json.dumps(export_data, indent=2, default=str))
+                console.print(f"[green]Exported to {output_path}[/green]")
+                console.print()
+
+        # ── Render team dashboard ──────────────────────────────────────
+        console.print()
+        console.print(f"[bold]📊 gh-stats — Team Analytics: {target_name}[/bold]")
+        console.print()
+
+        # Team summary
+        console.print(
+            render_team_summary(
+                target_name,
+                total_repos,
+                total_contributors,
+                total_commits,
+                total_prs_count,
+                total_issues_count,
+                bus_factor,
+                avg_health,
+            )
+        )
+        console.print()
+
+        # Contributor rankings
+        console.print(render_contributor_table(contributor_rankings, limit=contributor_limit))
+        console.print()
+
+        # Bus factor
+        if not no_bus_factor:
+            console.print(render_bus_factor(bus_factor_data))
+            console.print()
+
+        # Repo health
+        if not no_health:
+            console.print(render_repo_health_matrix(repo_health, limit=repo_limit))
+            console.print()
+
+        # Collaboration network
+        if not no_collab:
+            console.print(render_collaboration_heatmap(collab_data, limit=contributor_limit))
+            console.print()
+
+        # Review analytics
+        if not no_reviews:
+            console.print(render_review_analytics(review_data))
+            console.print()
 
     except AuthError as e:
         console.print(f"[bold red]Authentication error:[/bold red] {e}")

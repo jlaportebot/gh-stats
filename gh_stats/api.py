@@ -547,3 +547,223 @@ def get_org_contributions(token: str, org: str, year: int | None = None) -> dict
         return {}
 
     return contributions
+
+
+# ---------------------------------------------------------------------------
+# Team Analytics API
+# ---------------------------------------------------------------------------
+
+
+def get_repo_contributors(
+    token: str, owner: str, repo: str, *, per_page: int = 100, pages: int = 3
+) -> list[dict[str, Any]]:
+    """Fetch contributors for a repository (paginated).
+
+    Returns:
+        List of contributor dicts with login, contributions, avatar_url.
+    """
+    contributors: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/repos/{owner}/{repo}/contributors",
+                params={"per_page": per_page, "page": page, "anon": "true"},
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        contributors.extend(resp)
+    return contributors
+
+
+def get_repo_commits(
+    token: str,
+    owner: str,
+    repo: str,
+    *,
+    per_page: int = 100,
+    pages: int = 3,
+    since: str | None = None,
+    until: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch commits for a repository (paginated).
+
+    Args:
+        since: ISO 8601 date string to filter commits after this date.
+        until: ISO 8601 date string to filter commits before this date.
+
+    Returns:
+        List of commit dicts with author, date, message, stats.
+    """
+    params: dict[str, Any] = {"per_page": per_page, "page": 1}
+    if since:
+        params["since"] = since
+    if until:
+        params["until"] = until
+
+    commits: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        params["page"] = page
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/repos/{owner}/{repo}/commits",
+                params=params,
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        commits.extend(resp)
+    return commits
+
+
+def get_repo_pull_requests(
+    token: str,
+    owner: str,
+    repo: str,
+    *,
+    state: str = "all",
+    per_page: int = 100,
+    pages: int = 3,
+) -> list[dict[str, Any]]:
+    """Fetch pull requests for a repository (paginated).
+
+    Args:
+        state: "open", "closed", or "all".
+
+    Returns:
+        List of PR dicts with author, state, created_at, merged_at, reviews.
+    """
+    prs: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/repos/{owner}/{repo}/pulls",
+                params={
+                    "state": state,
+                    "per_page": per_page,
+                    "page": page,
+                    "sort": "updated",
+                    "direction": "desc",
+                },
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        prs.extend(resp)
+    return prs
+
+
+def get_repo_issues(
+    token: str,
+    owner: str,
+    repo: str,
+    *,
+    state: str = "all",
+    per_page: int = 100,
+    pages: int = 3,
+) -> list[dict[str, Any]]:
+    """Fetch issues for a repository (paginated).
+
+    Note: GitHub API returns both issues and PRs. Filter by 'pull_request' key to separate.
+
+    Args:
+        state: "open", "closed", or "all".
+
+    Returns:
+        List of issue dicts (excluding PRs).
+    """
+    issues: list[dict[str, Any]] = []
+    for page in range(1, pages + 1):
+        try:
+            resp = _request(
+                token,
+                "GET",
+                f"https://api.github.com/repos/{owner}/{repo}/issues",
+                params={
+                    "state": state,
+                    "per_page": per_page,
+                    "page": page,
+                    "sort": "updated",
+                    "direction": "desc",
+                },
+            )
+        except ApiError as e:
+            if "404" in str(e):
+                return []
+            raise
+        if not resp:
+            break
+        # Filter out PRs (issues that have a 'pull_request' key)
+        issues.extend([item for item in resp if "pull_request" not in item])
+    return issues
+
+
+def get_pull_request_reviews(
+    token: str, owner: str, repo: str, pr_number: int, *, per_page: int = 100
+) -> list[dict[str, Any]]:
+    """Fetch reviews for a specific pull request.
+
+    Returns:
+        List of review dicts with reviewer, state, submitted_at, body.
+    """
+    try:
+        resp = _request(
+            token,
+            "GET",
+            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+            params={"per_page": per_page},
+        )
+    except ApiError as e:
+        if "404" in str(e):
+            return []
+        raise
+    return resp
+
+
+def get_repo_details(token: str, owner: str, repo: str) -> dict[str, Any] | None:
+    """Fetch detailed repository information.
+
+    Returns:
+        Dict with repo details or None if not found.
+    """
+    try:
+        resp = _request(token, "GET", f"https://api.github.com/repos/{owner}/{repo}")
+    except ApiError as e:
+        if "404" in str(e):
+            return None
+        raise
+    return {
+        "name": resp.get("name", ""),
+        "full_name": resp.get("full_name", ""),
+        "description": resp.get("description", ""),
+        "language": resp.get("language"),
+        "stargazers_count": resp.get("stargazers_count", 0),
+        "forks_count": resp.get("forks_count", 0),
+        "watchers_count": resp.get("watchers_count", 0),
+        "open_issues_count": resp.get("open_issues_count", 0),
+        "size": resp.get("size", 0),
+        "default_branch": resp.get("default_branch", ""),
+        "created_at": resp.get("created_at", ""),
+        "updated_at": resp.get("updated_at", ""),
+        "pushed_at": resp.get("pushed_at", ""),
+        "license": resp.get("license", {}).get("name") if resp.get("license") else None,
+        "topics": resp.get("topics", []),
+        "archived": resp.get("archived", False),
+        "disabled": resp.get("disabled", False),
+        "fork": resp.get("fork", False),
+    }
