@@ -814,7 +814,7 @@ def compare(
     help="GitHub organization name (defaults to authenticated user's orgs)",
 )
 @click.option(
-    "--repos",
+    "--repo-limit",
     "repo_limit",
     default=20,
     type=int,
