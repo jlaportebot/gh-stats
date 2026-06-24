@@ -77,7 +77,9 @@ ignore = [
     "PLR0914",  # too many local variables (heatmap rendering)
     "SIM108",   # ternary operator suggestion (personal preference)
     "DTZ001",   # datetime without tzinfo (explicit UTC handling)
+    "DOC201",   # return not documented in docstring (private helpers)
     "PLR6104",  # use -= operator (style preference)
+    "FURB118",  # use operator.itemgetter instead of lambda (readability)
 ]
 per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001", "S105", "PLC2701"] }
 
