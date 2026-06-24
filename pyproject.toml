@@ -82,10 +82,6 @@ ignore = [
     "DOC201",   # return not documented in docstring (private helpers)
     "PLR6104",  # use -= operator (style preference)
     "FURB118",  # use operator.itemgetter instead of lambda (readability)
-    "ARG001",   # unused function argument (html_export label params)
-    "RUF069",   # unreliable float equality (tests - exact values expected)
-    "ANN001",   # missing type annotation for function argument (CLI task param)
-    "E501",     # line too long (HTML generation, progress.update calls)
 ]
 per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001", "S105", "PLC2701", "RUF069", "DTZ001"] }
 
