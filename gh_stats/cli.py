@@ -95,7 +95,7 @@ console = Console()
 
 
 def common_options(func: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator to add common options to subcommands.
+    """Decorator to add common options to subcommands (show, compare).
 
     Returns:
         The decorated command with common options added.
@@ -150,6 +150,36 @@ def common_options(func: Callable[..., Any]) -> Callable[..., Any]:
         default=None,
         type=click.Path(path_type=Path),
         help="Export dashboard data to JSON file",
+    )(func)
+    return click.option(
+        "--format",
+        "export_format",
+        type=click.Choice(["json", "html"]),
+        default="json",
+        help="Export format (json or html)",
+    )(func)
+
+
+def team_common_options(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator to add common options to the team subcommand.
+
+    Returns:
+        The decorated command with team-relevant common options added.
+    """
+    func = click.option(
+        "-y",
+        "--year",
+        "year",
+        default=None,
+        type=int,
+        help="Year for contribution analysis (default: current year)",
+    )(func)
+    func = click.option(
+        "--output",
+        "output_path",
+        default=None,
+        type=click.Path(path_type=Path),
+        help="Export team data to JSON file",
     )(func)
     return click.option(
         "--format",
@@ -784,7 +814,7 @@ def compare(
     help="GitHub organization name (defaults to authenticated user's orgs)",
 )
 @click.option(
-    "--repos",
+    "--repo-limit",
     "repo_limit",
     default=20,
     type=int,
@@ -825,14 +855,7 @@ def compare(
     default=False,
     help="Skip code review analytics",
 )
-@click.option(
-    "--output",
-    "output_path",
-    default=None,
-    type=click.Path(path_type=Path),
-    help="Export team data to JSON file",
-)
-@common_options
+@team_common_options
 def team(
     orgname: str | None,
     year: int | None,
