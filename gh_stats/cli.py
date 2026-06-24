@@ -49,7 +49,7 @@ from .api import (
     get_user_repos,
     get_user_stats,
 )
-from .html_export import _render_comparison_html
+from .html_export import _render_comparison_html, _render_team_html
 from .team import (
     compute_bus_factor,
     compute_collaboration_matrix,
@@ -57,6 +57,8 @@ from .team import (
     compute_repo_health_scores,
     compute_review_analytics,
 )
+from .team_trends import compute_team_trends
+from .team_trends_ui import render_team_trends
 from .team_ui import (
     render_bus_factor,
     render_collaboration_heatmap,
@@ -1021,9 +1023,11 @@ def team(
                 else 0
             )
 
+            # Compute trends for export and display
+            trends_data = compute_team_trends(all_commits, all_prs, all_issues)
+
             # Prepare export data
             export_data = {
-                "target_type": "org",
                 "target_name": target_name,
                 "year": year,
                 "stats": stats,
@@ -1032,6 +1036,7 @@ def team(
                 "repo_health": repo_health,
                 "collaboration": collab_data,
                 "review_analytics": review_data,
+                "trends": trends_data,
                 "summary": {
                     "total_repos": total_repos,
                     "total_contributors": total_contributors,
@@ -1048,13 +1053,8 @@ def team(
                 if export_format == "json":
                     output_path.write_text(json.dumps(export_data, indent=2, default=str))
                 elif export_format == "html":
-                    # HTML export not yet implemented for team view
-                    msg = (
-                        "[yellow]HTML export for team view not yet implemented, "
-                        "exporting JSON[/yellow]"
-                    )
-                    console.print(msg)
-                    output_path.write_text(json.dumps(export_data, indent=2, default=str))
+                    html_content = _render_team_html(export_data)
+                    output_path.write_text(html_content)
                 console.print(f"[green]Exported to {output_path}[/green]")
                 console.print()
 
@@ -1101,6 +1101,10 @@ def team(
         if not no_reviews:
             console.print(render_review_analytics(review_data))
             console.print()
+
+        # Activity trends
+        console.print(render_team_trends(trends_data))
+        console.print()
 
     except AuthError as e:
         console.print(f"[bold red]Authentication error:[/bold red] {e}")
