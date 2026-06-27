@@ -49,7 +49,12 @@ from .api import (
     get_user_repos,
     get_user_stats,
 )
-from .html_export import _render_comparison_html, _render_team_html
+from .html_export import (
+    _render_comparison_html,
+    _render_team_html,
+    render_team_comparison_html,
+    render_team_time_comparison_html,
+)
 from .team import (
     compute_bus_factor,
     compute_collaboration_matrix,
@@ -57,8 +62,8 @@ from .team import (
     compute_repo_health_scores,
     compute_review_analytics,
 )
-from .team_trends import compute_team_trends
-from .team_trends_ui import render_team_trends
+from .team_trends import compute_team_comparison, compute_team_time_comparison, compute_team_trends
+from .team_trends_ui import render_team_comparison, render_team_time_comparison, render_team_trends
 from .team_ui import (
     render_bus_factor,
     render_collaboration_heatmap,
@@ -659,12 +664,10 @@ def compare(
             comparison = compute_comparison_summary(activities_a, activities_b)
 
             # Compute contribution patterns
-
             patterns_a = compute_contribution_patterns(contrib_a)
             patterns_b = compute_contribution_patterns(contrib_b)
 
             # Compute growth rates
-
             growth = compute_growth_metrics(contrib_a, contrib_b)
 
         # ── Prepare export data ──────────────────────────────────────
@@ -1105,6 +1108,418 @@ def team(
         # Activity trends
         console.print(render_team_trends(trends_data))
         console.print()
+
+    except AuthError as e:
+        console.print(f"[bold red]Authentication error:[/bold red] {e}")
+        console.print("\n[yellow]Tips:[/yellow]")
+        console.print("  • Install [bold]gh[/bold] CLI and run [bold]gh auth login[/bold]")
+        console.print("  • Or set [bold]GH_TOKEN[/bold] environment variable")
+        raise SystemExit(1)
+    except ApiError as e:
+        console.print(f"[bold red]API error:[/bold red] {e}")
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Interrupted.[/dim]")
+        raise SystemExit(0)
+
+
+def _fetch_team_data(
+    token: str,
+    org_name: str,
+    year: int | None,
+    repo_limit: int,
+    progress: Progress,
+    task,
+) -> dict[str, Any]:
+    """Fetch and compute all team analytics data for an organization.
+
+    Args:
+        token: GitHub authentication token.
+        org_name: Organization name.
+        year: Optional year filter.
+        repo_limit: Max repositories to analyze.
+        progress: Rich progress bar.
+        task: Progress task ID.
+
+    Returns:
+        Team analytics data dict.
+    """
+    # Fetch org profile
+    progress.update(
+        task, description=f"Fetching organization profile for [bold]{org_name}[/bold]..."
+    )
+    stats = get_org_stats(token, org_name)
+    if not stats:
+        console.print(f"[bold red]Organization not found:[/bold red] {org_name}")
+        raise SystemExit(1)
+
+    # Fetch org repos
+    progress.update(task, description="Loading organization repositories...")
+    repos = get_org_repos(token, org_name, pages=5)
+    repos = repos[:repo_limit] if repo_limit else repos
+
+    # Fetch contributors, commits, PRs, issues for each repo
+    all_contributors: list[dict[str, Any]] = []
+    all_commits: list[dict[str, Any]] = []
+    all_prs: list[dict[str, Any]] = []
+    all_issues: list[dict[str, Any]] = []
+    all_reviews: dict[int, list[dict[str, Any]]] = {}
+
+    repo_commits: dict[str, list[dict[str, Any]]] = {}
+    repo_prs: dict[str, list[dict[str, Any]]] = {}
+    repo_issues: dict[str, list[dict[str, Any]]] = {}
+    repo_contributors: dict[str, list[dict[str, Any]]] = {}
+
+    since_date = None
+    if year:
+        since_date = f"{year}-01-01T00:00:00Z"
+
+    for i, repo in enumerate(repos):
+        repo_name = repo.get("name", "")
+        if not repo_name:
+            continue
+        full_name = repo.get("full_name", f"{org_name}/{repo_name}")
+
+        progress.update(
+            task,
+            description=f"Analyzing repo {i + 1}/{len(repos)}: [bold]{full_name}[/bold]...",
+        )
+
+        # Fetch repo data
+        contributors = get_repo_contributors(token, org_name, repo_name, pages=3)
+        commits = get_repo_commits(token, org_name, repo_name, pages=3, since=since_date)
+        prs = get_repo_pull_requests(token, org_name, repo_name, pages=3)
+        issues = get_repo_issues(token, org_name, repo_name, pages=3)
+
+        # Fetch reviews for each PR
+        reviews: dict[int, list[dict[str, Any]]] = {}
+        for pr in prs:
+            pr_num = pr.get("number")
+            if pr_num:
+                pr_reviews = get_pull_request_reviews(token, org_name, repo_name, pr_num)
+                reviews[pr_num] = pr_reviews
+                all_reviews[pr_num] = pr_reviews
+
+        all_contributors.extend(contributors)
+        all_commits.extend(commits)
+        all_prs.extend(prs)
+        all_issues.extend(issues)
+
+        repo_contributors[repo_name] = contributors
+        repo_commits[repo_name] = commits
+        repo_prs[repo_name] = prs
+        repo_issues[repo_name] = issues
+
+    # Compute analytics
+    progress.update(task, description="Computing team analytics...")
+
+    # Contributor rankings
+    contributor_rankings = compute_contributor_rankings(
+        all_contributors,
+        all_commits,
+        all_prs,
+        all_reviews,
+        all_issues,
+        top_n=20,
+    )
+
+    # Bus factor
+    bus_factor_data = compute_bus_factor(all_contributors, all_commits, all_prs)
+
+    # Repo health
+    repo_health = compute_repo_health_scores(
+        repos,
+        repo_commits,
+        repo_prs,
+        repo_issues,
+        repo_contributors,
+        top_n=repo_limit,
+    )
+
+    # Collaboration matrix
+    collab_data = compute_collaboration_matrix(all_commits, all_prs, all_reviews)
+
+    # Review analytics
+    review_data = compute_review_analytics(all_prs, all_reviews)
+
+    # Team summary stats
+    active_repos = [
+        r for r in repos if not r.get("archived", False) and not r.get("disabled", False)
+    ]
+    total_repos = len(active_repos)
+    total_contributors = len({c.get("login", "") for c in all_contributors if c.get("login")})
+    cutoff_date = since_date or "1970-01-01T00:00:00Z"
+    total_commits = len([
+        c
+        for c in all_commits
+        if c.get("commit", {}).get("author", {}).get("date", "") >= cutoff_date
+    ])
+    total_prs_count = len(all_prs)
+    total_issues_count = len(all_issues)
+    bus_factor = bus_factor_data.get("bus_factor", 0)
+    avg_health = (
+        sum(r.get("health_score", 0) for r in repo_health) / len(repo_health) if repo_health else 0
+    )
+
+    # Compute trends
+    trends_data = compute_team_trends(all_commits, all_prs, all_issues)
+
+    return {
+        "target_name": org_name,
+        "year": year,
+        "stats": stats,
+        "contributor_rankings": contributor_rankings,
+        "bus_factor": bus_factor_data,
+        "repo_health": repo_health,
+        "collaboration": collab_data,
+        "review_analytics": review_data,
+        "trends": trends_data,
+        "summary": {
+            "total_repos": total_repos,
+            "total_contributors": total_contributors,
+            "total_commits": total_commits,
+            "total_prs": total_prs_count,
+            "total_issues": total_issues_count,
+            "bus_factor": bus_factor,
+            "avg_health": avg_health,
+        },
+    }
+
+
+@main.command()
+@click.option(
+    "-o",
+    "--org-a",
+    "org_a",
+    default=None,
+    help="First GitHub organization to compare",
+)
+@click.option(
+    "-O",
+    "--org-b",
+    "org_b",
+    default=None,
+    help="Second GitHub organization to compare",
+)
+@click.option(
+    "--repo-limit",
+    "repo_limit",
+    default=20,
+    type=int,
+    help="Number of repositories to analyze per org (default: 20)",
+)
+@team_common_options
+def team_compare(
+    org_a: str | None,
+    org_b: str | None,
+    year: int | None,
+    repo_limit: int,
+    output_path: Path | None,
+    export_format: str,
+) -> None:
+    """Compare two organizations side by side.
+
+    Analyzes repository health, contributor rankings, bus factor,
+    collaboration patterns, code review metrics, and activity trends
+    for both organizations.
+    """
+    if not org_a or not org_b:
+        console.print("[bold red]Error:[/bold red] Must specify both --org-a and --org-b")
+        raise SystemExit(1)
+
+    if org_a == org_b:
+        console.print("[bold red]Error:[/bold red] Organizations must be different")
+        raise SystemExit(1)
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            # Authenticate
+            task = progress.add_task("Authenticating with GitHub...", total=None)
+            token = get_token()
+
+            # Fetch data for both orgs
+            progress.update(task, description=f"Fetching data for [bold]{org_a}[/bold]...")
+            team_a_data = _fetch_team_data(token, org_a, year, repo_limit, progress, task)
+
+            progress.update(task, description=f"Fetching data for [bold]{org_b}[/bold]...")
+            team_b_data = _fetch_team_data(token, org_b, year, repo_limit, progress, task)
+
+            # Compute comparison
+            progress.update(task, description="Computing comparison...")
+            comparison = compute_team_comparison(
+                team_a_data,
+                team_b_data,
+                label_a=org_a,
+                label_b=org_b,
+            )
+
+            # Prepare export data
+            export_data = {
+                "comparison_mode": "side_by_side",
+                "label_a": org_a,
+                "label_b": org_b,
+                "year": year,
+                "team_a": team_a_data,
+                "team_b": team_b_data,
+                "comparison": comparison,
+            }
+
+            # Export if requested
+            if output_path:
+                if export_format == "json":
+                    output_path.write_text(json.dumps(export_data, indent=2, default=str))
+                elif export_format == "html":
+                    html_content = render_team_comparison_html(comparison)
+                    output_path.write_text(html_content)
+                console.print(f"[green]Exported to {output_path}[/green]")
+                console.print()
+
+        # ── Render comparison dashboard ──────────────────────────────────────
+        console.print()
+        console.print(f"[bold]📊 gh-stats — Team Comparison: {org_a} vs {org_b}[/bold]")
+        console.print()
+
+        console.print(render_team_comparison(comparison))
+
+    except AuthError as e:
+        console.print(f"[bold red]Authentication error:[/bold red] {e}")
+        console.print("\n[yellow]Tips:[/yellow]")
+        console.print("  • Install [bold]gh[/bold] CLI and run [bold]gh auth login[/bold]")
+        console.print("  • Or set [bold]GH_TOKEN[/bold] environment variable")
+        raise SystemExit(1)
+    except ApiError as e:
+        console.print(f"[bold red]API error:[/bold red] {e}")
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Interrupted.[/dim]")
+        raise SystemExit(0)
+
+
+@main.command()
+@click.option(
+    "-o",
+    "--org",
+    "orgname",
+    default=None,
+    help="GitHub organization name (defaults to authenticated user's orgs)",
+)
+@click.option(
+    "--year-a",
+    "year_a",
+    default=None,
+    type=int,
+    help="First year for time-period comparison",
+)
+@click.option(
+    "--year-b",
+    "year_b",
+    default=None,
+    type=int,
+    help="Second year for time-period comparison",
+)
+@click.option(
+    "--repo-limit",
+    "repo_limit",
+    default=20,
+    type=int,
+    help="Number of repositories to analyze (default: 20)",
+)
+@team_common_options
+def team_time_compare(
+    orgname: str | None,
+    year_a: int | None,
+    year_b: int | None,
+    repo_limit: int,
+    output_path: Path | None,
+    export_format: str,
+) -> None:
+    """Compare the same organization across two time periods.
+
+    Analyzes growth/decline in repository health, contributor activity,
+    bus factor, collaboration patterns, code review metrics, and trends.
+    """
+    if not year_a or not year_b:
+        console.print("[bold red]Error:[/bold red] Must specify both --year-a and --year-b")
+        raise SystemExit(1)
+
+    if year_a == year_b:
+        console.print("[bold red]Error:[/bold red] Years must be different")
+        raise SystemExit(1)
+
+    # Determine organization
+    if orgname is None:
+        console.print(
+            "[yellow]No organization specified. Use --org to specify an organization.[/yellow]"
+        )
+        console.print("[dim]Your organizations can be found at https://github.com/orgs[/dim]")
+        raise SystemExit(1)
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            # Authenticate
+            task = progress.add_task("Authenticating with GitHub...", total=None)
+            token = get_token()
+
+            # Fetch data for year A
+            progress.update(
+                task, description=f"Fetching data for [bold]{orgname}[/bold] ({year_a})..."
+            )
+            team_a_data = _fetch_team_data(token, orgname, year_a, repo_limit, progress, task)
+
+            # Fetch data for year B
+            progress.update(
+                task, description=f"Fetching data for [bold]{orgname}[/bold] ({year_b})..."
+            )
+            team_b_data = _fetch_team_data(token, orgname, year_b, repo_limit, progress, task)
+
+            # Compute time comparison
+            progress.update(task, description="Computing time-period comparison...")
+            comparison = compute_team_time_comparison(
+                team_a_data,
+                team_b_data,
+                label_current=f"{orgname} ({year_a})",
+                label_previous=f"{orgname} ({year_b})",
+            )
+
+            # Prepare export data
+            export_data = {
+                "comparison_mode": "time_period",
+                "target_name": orgname,
+                "year_a": year_a,
+                "year_b": year_b,
+                "team_a": team_a_data,
+                "team_b": team_b_data,
+                "comparison": comparison,
+            }
+
+            # Export if requested
+            if output_path:
+                if export_format == "json":
+                    output_path.write_text(json.dumps(export_data, indent=2, default=str))
+                elif export_format == "html":
+                    html_content = render_team_time_comparison_html(comparison)
+                    output_path.write_text(html_content)
+                console.print(f"[green]Exported to {output_path}[/green]")
+                console.print()
+
+        # ── Render time comparison dashboard ──────────────────────────────────────
+        console.print()
+        console.print(
+            f"[bold]📊 gh-stats — Team Time Comparison: {orgname} ({year_a} vs {year_b})[/bold]"
+        )
+        console.print()
+
+        console.print(render_team_time_comparison(comparison))
 
     except AuthError as e:
         console.print(f"[bold red]Authentication error:[/bold red] {e}")

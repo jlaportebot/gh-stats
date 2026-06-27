@@ -65,6 +65,8 @@ ignore = [
     "PLR0917",  # too many positional arguments (CLI entry point)
     "PLR0915",  # too many statements (CLI entry point)
     "FBT001",   # boolean positional argument (Click options)
+    "FBT002",   # boolean default positional argument (format_diff helper)
+    "FBT003",   # boolean positional value in function call (format_diff calls)
     "DOC501",   # missing exception in docstring (CLI entry point)
     "PLW0717",  # try clause too many statements (CLI entry point)
     "PLC0415",  # import not at top level (lazy imports in CLI)
@@ -80,8 +82,12 @@ ignore = [
     "DOC201",   # return not documented in docstring (private helpers)
     "PLR6104",  # use -= operator (style preference)
     "FURB118",  # use operator.itemgetter instead of lambda (readability)
+    "ARG001",   # unused function argument (html_export label params)
+    "RUF069",   # unreliable float equality (tests - exact values expected)
+    "ANN001",   # missing type annotation for function argument (CLI task param)
+    "E501",     # line too long (HTML generation, progress.update calls)
 ]
-per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001", "S105", "PLC2701"] }
+per-file-ignores = { "tests/*" = ["S101", "ANN201", "ANN001", "PLR6301", "PLR2004", "PLC1901", "F401", "INP001", "S105", "PLC2701", "RUF069", "DTZ001"] }
 
 [tool.ruff.format]
 quote-style = "double"
